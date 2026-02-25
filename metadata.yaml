@@ -1,7 +1,7 @@
 name: astrbot_plugin_arknights_authorization
 display_name: 明日方舟通行证盲盒
 desc: 明日方舟通行证盲盒互动插件，支持本地资源自动读取、群组隔离钱包与持久化状态。
-version: v1.4.2
+version: v1.4.3
 author: codex
 repo: https://github.com/yourname/astrbot_plugin_arknights_authorization
 

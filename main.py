@@ -12,7 +12,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.4.2")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.4.3")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -43,7 +43,6 @@ class ArknightsBlindBoxPlugin(Star):
     async def initialize(self):
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._migrate_legacy_data_if_needed()
-        self._ensure_resource_dirs()
         self._ensure_default_runtime_config()
         self._load_all()
         self._sync_runtime_config_from_context()
@@ -95,13 +94,8 @@ class ArknightsBlindBoxPlugin(Star):
             yield event.plain_result(self._build_category_list_text())
             return
 
-        if action in {"资源路径", "资源目录", "path", "resource_path"}:
-            yield event.plain_result(
-                "资源目录如下（首次加载会自动创建）：\n"
-                f"- {self.number_box_dir}\n"
-                f"- {self.special_box_dir}\n"
-                f"- {self.revealed_dir}"
-            )
+        if action in {"帮助", "help"}:
+            yield event.plain_result(self._build_help_text())
             return
 
         if action in {"重载资源", "reload", "reload_resources", "rescan"}:
@@ -336,8 +330,7 @@ class ArknightsBlindBoxPlugin(Star):
             "6) /方舟盲盒 状态 [种类ID]\n"
             "7) /方舟盲盒 刷新 [种类ID]\n"
             "8) /方舟盲盒 重载资源\n"
-            "9) /方舟盲盒 资源路径\n"
-            "10) /方舟盲盒 管理员 ..."
+            "9) /方舟盲盒 管理员 ..."
         )
 
     def _build_category_list_text(self) -> str:
@@ -563,10 +556,6 @@ class ArknightsBlindBoxPlugin(Star):
             "special_box_prices": {},
         })
 
-    def _ensure_resource_dirs(self):
-        self.number_box_dir.mkdir(parents=True, exist_ok=True)
-        self.special_box_dir.mkdir(parents=True, exist_ok=True)
-        self.revealed_dir.mkdir(parents=True, exist_ok=True)
 
     def _resolve_persistent_data_dir(self) -> Path:
         for getter_name in ("get_data_dir", "get_plugin_data_dir", "get_storage_dir"):
