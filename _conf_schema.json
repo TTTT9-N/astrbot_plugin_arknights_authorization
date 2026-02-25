@@ -24,17 +24,10 @@
     "default": []
   },
   "special_box_prices": {
-    "type": "dict",
+    "type": "object",
     "description": "特殊盒按种类定价",
     "hint": "键为种类ID，值为价格，例如 {\"sp_limited\": 66}",
     "default": {},
-    "template_schema": {
-      "price": {
-        "description": "价格",
-        "type": "int",
-        "default": 40,
-        "hint": "该特殊盒种类的单抽价格"
-      }
-    }
+    "items": {}
   }
 }

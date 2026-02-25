@@ -70,6 +70,6 @@ resources/number_box/
 - `number_box_price`：数字盒单抽价格（默认 25）
 - `special_box_default_price`：特殊盒默认单抽价格（默认 40）
 - `admin_ids`：管理员账号 ID 列表
-- `special_box_prices`：特殊盒单独定价字典（如 `{"sp_xxx": 66}`）
+- `special_box_prices`：特殊盒单独定价对象（如 `{"sp_xxx": 66}`）
 
 > 插件已改为使用仓库根目录 `_conf_schema.json` 注册 WebUI 配置项（符合 AstrBot 插件配置文档）。
