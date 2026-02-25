@@ -12,7 +12,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.4.0")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.4.1")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -28,7 +28,7 @@ class ArknightsBlindBoxPlugin(Star):
         self.session_path = self.data_dir / "sessions.json"
         self.db_path = self.data_dir / "blindbox.db"
 
-        self.resource_dir = self.data_dir / "resources"
+        self.resource_dir = self.data_dir / "资源"
         self.number_box_dir = self.resource_dir / "数字盒"
         self.special_box_dir = self.resource_dir / "特殊盒"
         self.revealed_dir = self.resource_dir / "开出盲盒"
@@ -42,8 +42,8 @@ class ArknightsBlindBoxPlugin(Star):
 
     async def initialize(self):
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        self._ensure_resource_dirs()
         self._migrate_legacy_data_if_needed()
+        self._ensure_resource_dirs()
         self._ensure_default_runtime_config()
         self._load_all()
         self._sync_runtime_config_from_context()
@@ -93,6 +93,24 @@ class ArknightsBlindBoxPlugin(Star):
 
         if action in {"列表", "list", "types"}:
             yield event.plain_result(self._build_category_list_text())
+            return
+
+        if action in {"资源路径", "资源目录", "path"}:
+            yield event.plain_result(
+                "资源目录如下（首次加载会自动创建）：\n"
+                f"- {self.number_box_dir}\n"
+                f"- {self.special_box_dir}\n"
+                f"- {self.revealed_dir}"
+            )
+            return
+
+        if action in {"重载资源", "reload", "reload_resources"}:
+            self._refresh_categories_and_states(force_sync_legacy=True)
+            yield event.plain_result(
+                "资源已重新扫描。\n"
+                f"当前已加载种类数：{len(self.categories)}\n"
+                "可发送 /方舟盲盒 列表 查看最新种类。"
+            )
             return
 
         if action in {"选择", "开", "开启", "open", "状态", "status", "刷新", "reset", "refresh"}:
@@ -317,12 +335,14 @@ class ArknightsBlindBoxPlugin(Star):
             "5) /方舟盲盒 开 <序号>\n"
             "6) /方舟盲盒 状态 [种类ID]\n"
             "7) /方舟盲盒 刷新 [种类ID]\n"
-            "8) /方舟盲盒 管理员 ..."
+            "8) /方舟盲盒 重载资源\n"
+            "9) /方舟盲盒 资源路径\n"
+            "10) /方舟盲盒 管理员 ..."
         )
 
     def _build_category_list_text(self) -> str:
         if not self.categories:
-            return "当前未发现盲盒资源。请先在 resources/数字盒 或 resources/特殊盒 下放入资源。"
+            return "当前未发现盲盒资源。请先在 资源/数字盒 或 资源/特殊盒 下放入资源。"
         lines = ["可用盲盒种类："]
         for category_id, category in self.categories.items():
             remain_items, remain_slots = self._db_get_category_state(category_id)
@@ -433,6 +453,7 @@ class ArknightsBlindBoxPlugin(Star):
         self._runtime_config_mtime = self._safe_mtime(self.runtime_config_path)
 
     def _maybe_reload_runtime_data(self):
+        self._sync_legacy_resource_dirs()
         runtime_mtime = self._safe_mtime(self.runtime_config_path)
         if runtime_mtime > self._runtime_config_mtime:
             self.runtime_config = self._load_json(self.runtime_config_path, default=self.runtime_config)
@@ -466,7 +487,9 @@ class ArknightsBlindBoxPlugin(Star):
             self._save_json(self.runtime_config_path, self.runtime_config)
             logger.info("[arknights_blindbox] 已同步并保存 WebUI 插件配置")
 
-    def _refresh_categories_and_states(self):
+    def _refresh_categories_and_states(self, force_sync_legacy: bool = False):
+        if force_sync_legacy:
+            self._sync_legacy_resource_dirs()
         scanned = self._scan_categories()
         self.categories = scanned
         for category_id, category in scanned.items():
@@ -570,14 +593,18 @@ class ArknightsBlindBoxPlugin(Star):
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
 
-        # 迁移旧资源目录
-        legacy_resource = self.legacy_data_dir / "resources"
-        if legacy_resource.exists():
+        self._sync_legacy_resource_dirs()
+
+    def _sync_legacy_resource_dirs(self):
+        for root_name in ["resources", "资源"]:
+            legacy_root = self.legacy_data_dir / root_name
+            if not legacy_root.exists():
+                continue
             for sub in ["数字盒", "特殊盒", "开出盲盒"]:
-                src = legacy_resource / sub
+                src = legacy_root / sub
                 dst = self.resource_dir / sub
-                if src.exists() and not dst.exists():
-                    shutil.copytree(src, dst)
+                if src.exists():
+                    shutil.copytree(src, dst, dirs_exist_ok=True)
 
     def _init_db(self):
         conn = sqlite3.connect(self.db_path)
