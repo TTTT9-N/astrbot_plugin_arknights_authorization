@@ -10,7 +10,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.3.0")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.3.1")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -412,10 +412,82 @@ class ArknightsBlindBoxPlugin(Star):
         return f"{group_id}:{user_id or 'unknown'}"
 
     def _get_identity(self, event: AstrMessageEvent) -> Optional[Tuple[str, str]]:
-        user_id = str(getattr(event, "user_id", "") or getattr(event, "sender_id", "") or "")
-        if not user_id or user_id == "unknown":
+        # 兼容不同适配器字段（NapCat/OneBot/其他）
+        candidates_user = [
+            getattr(event, "user_id", None),
+            getattr(event, "sender_id", None),
+            getattr(event, "from_user_id", None),
+            getattr(event, "author_id", None),
+        ]
+
+        for getter_name in ("get_sender_id", "get_user_id", "get_author_id"):
+            getter = getattr(event, getter_name, None)
+            if callable(getter):
+                try:
+                    candidates_user.append(getter())
+                except Exception:
+                    pass
+
+        sender_obj = getattr(event, "sender", None)
+        if isinstance(sender_obj, dict):
+            candidates_user.extend([
+                sender_obj.get("user_id"),
+                sender_obj.get("id"),
+                sender_obj.get("uin"),
+            ])
+
+        message_obj = getattr(event, "message_obj", None)
+        if isinstance(message_obj, dict):
+            sender = message_obj.get("sender")
+            if isinstance(sender, dict):
+                candidates_user.extend([
+                    sender.get("user_id"),
+                    sender.get("id"),
+                    sender.get("uin"),
+                ])
+            candidates_user.extend([
+                message_obj.get("user_id"),
+                message_obj.get("sender_id"),
+            ])
+
+        user_id = ""
+        for value in candidates_user:
+            text = str(value or "").strip()
+            if text and text.lower() not in {"unknown", "none", "null"}:
+                user_id = text
+                break
+        if not user_id:
             return None
-        group_id = str(getattr(event, "group_id", "") or getattr(event, "session_id", "") or "private")
+
+        candidates_group = [
+            getattr(event, "group_id", None),
+            getattr(event, "guild_id", None),
+            getattr(event, "channel_id", None),
+            getattr(event, "session_id", None),
+        ]
+        for getter_name in ("get_group_id", "get_session_id"):
+            getter = getattr(event, getter_name, None)
+            if callable(getter):
+                try:
+                    candidates_group.append(getter())
+                except Exception:
+                    pass
+
+        if isinstance(message_obj, dict):
+            candidates_group.extend([
+                message_obj.get("group_id"),
+                message_obj.get("guild_id"),
+                message_obj.get("channel_id"),
+                message_obj.get("conversation_id"),
+            ])
+
+        group_id = "private"
+        for value in candidates_group:
+            text = str(value or "").strip()
+            if text and text.lower() not in {"none", "null"}:
+                group_id = text
+                break
+
         return group_id, user_id
 
     def _is_admin(self, event: AstrMessageEvent) -> bool:

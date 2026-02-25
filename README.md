@@ -88,3 +88,6 @@
 
 - 若插件配置弹窗显示“这个插件没有配置”，请升级到此版本并重载插件。
 - 本版本在 `metadata.yaml` 中同时提供 `config`、`configs`、`config_schema` 三种字段，用于兼容不同 AstrBot 版本的配置读取方式。
+
+
+若仍提示“无法识别账号ID”，请在 NapCat 适配器下确认事件包含 `sender/user_id` 字段；本版本已增强多字段兼容识别。
