@@ -8,6 +8,7 @@
   - 数字盒（固定价格，默认 25 元/抽）
   - 特殊盒（由管理员定义价格）
 - 新增金钱系统：用户需先注册才可开盒，默认初始金额 200 元。
+- 钱包按“QQ群 + 用户QQ”维度独立，群组之间互不影响。
 - 开盒结果从对应种类奖池中随机抽取，抽中后从奖池移除。
 - 每个序号在同一种类中仅可选择一次，直到手动刷新该种类。
 - 当卡池或可选序号耗尽时提示用户，可自主选择“刷新该种类”或“切换种类”。
@@ -47,7 +48,7 @@
 - `data/pool_state.json`：各盲盒种类当前剩余奖池状态。
 - `data/slot_state.json`：各盲盒种类当前剩余可选序号状态。
 - `data/sessions.json`：用户会话（记录每个用户当前选中的盲盒种类）。
-- `data/wallets.json`：用户余额。
+- `data/blindbox.db`：SQLite 数据库，记录不同群组下用户QQ与余额（群组隔离）。
 - `data/runtime_config.json`：运行时配置（价格、管理员等）。
 
 ### `box_config.json` 结构示例
@@ -86,4 +87,4 @@
 ## WebUI 配置排查
 
 - 若插件配置弹窗显示“这个插件没有配置”，请升级到此版本并重载插件。
-- 本版本在 `metadata.yaml` 中同时提供 `config` 与 `config_schema`，用于兼容不同 AstrBot 版本的配置读取方式。
+- 本版本在 `metadata.yaml` 中同时提供 `config`、`configs`、`config_schema` 三种字段，用于兼容不同 AstrBot 版本的配置读取方式。
