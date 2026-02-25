@@ -33,17 +33,13 @@ class ArknightsBlindBoxPlugin(Star):
 
     @filter.command("方舟盲盒")
     async def arknights_blindbox(self, event: AstrMessageEvent):
-        """明日方舟通行证盲盒：列表/选择/开启/状态/帮助。"""
+        """明日方舟通行证盲盒：列表/选择/开启。"""
         args = self._extract_command_args(event.message_str)
         if not args:
             yield event.plain_result(self._build_help_text())
             return
 
         action = args[0].lower()
-        if action in {"帮助", "help", "h"}:
-            yield event.plain_result(self._build_help_text())
-            return
-
         if action in {"列表", "list", "types"}:
             yield event.plain_result(self._build_category_list_text())
             return
@@ -68,11 +64,10 @@ class ArknightsBlindBoxPlugin(Star):
                 f"你已选择【{category.get('name', category_id)}】\n"
                 f"当前剩余奖品数：{remain_count}\n"
                 f"可选盲盒序号：1 ~ {slots}\n"
-                "请发送指令：/方舟盲盒 开 <序号>"
+                "请发送：/方舟盲盒 开 <序号>"
             )
             image = category.get("selection_image", "")
-            for result in self._build_results_with_optional_image(event, tip_text, image):
-                yield result
+            yield self._event_result_with_optional_image(event, tip_text, image)
             return
 
         if action in {"开", "开启", "open"}:
@@ -120,12 +115,10 @@ class ArknightsBlindBoxPlugin(Star):
 
             msg = (
                 f"你选择了第 {box_no} 号盲盒，开启结果：\n"
-                f"所属种类：{category.get('name', category_id)}\n"
-                f"奖品名称：{item_name}\n"
+                f"🎉 {item_name}\n"
                 f"当前奖池剩余：{remain_count}{reset_tip}"
             )
-            for result in self._build_results_with_optional_image(event, msg, item_image):
-                yield result
+            yield self._event_result_with_optional_image(event, msg, item_image)
             return
 
         if action in {"状态", "status"}:
@@ -151,11 +144,6 @@ class ArknightsBlindBoxPlugin(Star):
 
         yield event.plain_result(self._build_help_text())
 
-    @filter.command("方舟盲盒帮助")
-    async def arknights_blindbox_help(self, event: AstrMessageEvent):
-        """查看明日方舟盲盒帮助。"""
-        yield event.plain_result(self._build_help_text())
-
     def _extract_command_args(self, raw_message: str) -> List[str]:
         text = (raw_message or "").strip()
         if not text:
@@ -171,12 +159,11 @@ class ArknightsBlindBoxPlugin(Star):
 
     def _build_help_text(self) -> str:
         return (
-            "指令\n"
-            "• /方舟盲盒 列表：查看可用盲盒种类。\n"
-            "• /方舟盲盒 选择 <种类ID>：选择某个盲盒种类并返回当前种类向导。\n"
-            "• /方舟盲盒 开 <序号>：开启指定序号盲盒（实际从当前种类奖池随机抽取）。\n"
-            "• /方舟盲盒 状态 [种类ID]：查看当前奖池剩余情况。\n"
-            "也可直接使用：/方舟盲盒帮助"
+            "明日方舟通行证盲盒指令：\n"
+            "1) /方舟盲盒 列表\n"
+            "2) /方舟盲盒 选择 <种类ID>\n"
+            "3) /方舟盲盒 开 <序号>\n"
+            "4) /方舟盲盒 状态 [种类ID]"
         )
 
     def _build_category_list_text(self) -> str:
@@ -198,16 +185,16 @@ class ArknightsBlindBoxPlugin(Star):
         user = str(getattr(event, "user_id", "") or getattr(event, "sender_id", "") or "unknown")
         return f"{room}:{user}"
 
-    def _build_results_with_optional_image(self, event: AstrMessageEvent, text: str, image: str):
+    def _event_result_with_optional_image(self, event: AstrMessageEvent, text: str, image: str):
         image = (image or "").strip()
         if image and hasattr(event, "image_result"):
             try:
-                return [event.image_result(image, text)]
+                return event.image_result(image, text)
             except TypeError:
-                return [event.image_result(image), event.plain_result(text)]
+                return event.image_result(image)
         if image:
-            return [event.plain_result(f"{text}\n图片：{image}")]
-        return [event.plain_result(text)]
+            return event.plain_result(f"{text}\n图片：{image}")
+        return event.plain_result(text)
 
     def _load_all(self):
         self.config = self._load_json(self.config_path, default={})
