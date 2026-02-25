@@ -2,15 +2,9 @@
 
 明日方舟通行证盲盒互动插件（AstrBot）。
 
-## 本次修复
+## 图片资源目录
 
-1. GitHub 仓库中的盲盒资源目录改为长期保留、由你自主维护。
-2. 资源目录只保留两类：`number_box` 与 `special_box`。
-3. 去除 `revealed_box`（手动盲盒结果目录）相关说明与依赖。
-
-## 资源目录（主分支长期保留）
-
-请在仓库中保留并按需维护以下目录：
+按需加入想要的通行证：
 
 ```text
 resources/
@@ -26,14 +20,14 @@ resources/
 
 ```text
 resources/number_box/
-└─ num_vc17/
+└─ 7.0/
    ├─ selection.jpg
-   ├─ 1-山.png
-   ├─ 2-W.jpg
-   └─ 3-缪尔赛思.webp
+   ├─ 1-水月精一.png
+   ├─ 2-水月精二.jpg
+   └─ 3-水陈精一.webp
 ```
 
-- `num_vc17`：种类 ID（用于 `/方舟盲盒 选择 num_vc17`）
+- `7.0`：种类 ID（用于 `/方舟盲盒 选择 7.0`）
 - 奖品文件名：`<序号>-<名称>.<扩展名>` 或 `<序号>_<名称>.<扩展名>`
 - 支持扩展名：`jpg / jpeg / png / webp`
 - `selection.jpg/png` 或 `cover.jpg/png` 可作为选择引导图
