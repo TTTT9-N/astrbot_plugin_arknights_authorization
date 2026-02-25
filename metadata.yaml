@@ -1,6 +1,6 @@
 name: astrbot_plugin_arknights_authorization
 display_name: 明日方舟通行证盲盒
 desc: 明日方舟通行证盲盒互动插件，支持多种类独立奖池、抽后移除与空池重置。
-version: v1.0.0
+version: v1.1.0
 author: codex
 repo: https://github.com/yourname/astrbot_plugin_arknights_authorization
