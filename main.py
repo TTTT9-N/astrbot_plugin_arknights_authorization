@@ -12,7 +12,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.4.1")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.4.2")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -28,10 +28,10 @@ class ArknightsBlindBoxPlugin(Star):
         self.session_path = self.data_dir / "sessions.json"
         self.db_path = self.data_dir / "blindbox.db"
 
-        self.resource_dir = self.data_dir / "资源"
-        self.number_box_dir = self.resource_dir / "数字盒"
-        self.special_box_dir = self.resource_dir / "特殊盒"
-        self.revealed_dir = self.resource_dir / "开出盲盒"
+        self.resource_dir = self.base_dir / "resources"
+        self.number_box_dir = self.resource_dir / "number_box"
+        self.special_box_dir = self.resource_dir / "special_box"
+        self.revealed_dir = self.resource_dir / "revealed_box"
 
         self.sessions: Dict[str, str] = {}
         self.runtime_config: Dict[str, object] = {}
@@ -95,7 +95,7 @@ class ArknightsBlindBoxPlugin(Star):
             yield event.plain_result(self._build_category_list_text())
             return
 
-        if action in {"资源路径", "资源目录", "path"}:
+        if action in {"资源路径", "资源目录", "path", "resource_path"}:
             yield event.plain_result(
                 "资源目录如下（首次加载会自动创建）：\n"
                 f"- {self.number_box_dir}\n"
@@ -104,7 +104,7 @@ class ArknightsBlindBoxPlugin(Star):
             )
             return
 
-        if action in {"重载资源", "reload", "reload_resources"}:
+        if action in {"重载资源", "reload", "reload_resources", "rescan"}:
             self._refresh_categories_and_states(force_sync_legacy=True)
             yield event.plain_result(
                 "资源已重新扫描。\n"
@@ -342,7 +342,7 @@ class ArknightsBlindBoxPlugin(Star):
 
     def _build_category_list_text(self) -> str:
         if not self.categories:
-            return "当前未发现盲盒资源。请先在 资源/数字盒 或 资源/特殊盒 下放入资源。"
+            return "当前未发现盲盒资源。请先在 resources/number_box 或 resources/special_box 下放入资源。"
         lines = ["可用盲盒种类："]
         for category_id, category in self.categories.items():
             remain_items, remain_slots = self._db_get_category_state(category_id)
@@ -584,25 +584,37 @@ class ArknightsBlindBoxPlugin(Star):
         return Path.home() / ".astrbot" / "plugin_data" / "astrbot_plugin_arknights_authorization"
 
     def _migrate_legacy_data_if_needed(self):
-        if not self.legacy_data_dir.exists() or self.legacy_data_dir.resolve() == self.data_dir.resolve():
-            return
-        for file_name in ["sessions.json", "runtime_config.json", "blindbox.db"]:
-            src = self.legacy_data_dir / file_name
-            dst = self.data_dir / file_name
-            if src.exists() and not dst.exists():
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
+        if self.legacy_data_dir.exists() and self.legacy_data_dir.resolve() != self.data_dir.resolve():
+            for file_name in ["sessions.json", "runtime_config.json", "blindbox.db"]:
+                src = self.legacy_data_dir / file_name
+                dst = self.data_dir / file_name
+                if src.exists() and not dst.exists():
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst)
 
         self._sync_legacy_resource_dirs()
 
     def _sync_legacy_resource_dirs(self):
-        for root_name in ["resources", "资源"]:
-            legacy_root = self.legacy_data_dir / root_name
-            if not legacy_root.exists():
+        sub_dir_map = {
+            "number_box": "number_box",
+            "special_box": "special_box",
+            "revealed_box": "revealed_box",
+            "数字盒": "number_box",
+            "特殊盒": "special_box",
+            "开出盲盒": "revealed_box",
+        }
+        source_roots = [
+            self.legacy_data_dir / "resources",
+            self.legacy_data_dir / "资源",
+            self.data_dir / "resources",
+            self.data_dir / "资源",
+        ]
+        for root in source_roots:
+            if not root.exists():
                 continue
-            for sub in ["数字盒", "特殊盒", "开出盲盒"]:
-                src = legacy_root / sub
-                dst = self.resource_dir / sub
+            for src_sub, dst_sub in sub_dir_map.items():
+                src = root / src_sub
+                dst = self.resource_dir / dst_sub
                 if src.exists():
                     shutil.copytree(src, dst, dirs_exist_ok=True)
 
