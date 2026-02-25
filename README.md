@@ -1,14 +1,51 @@
-# astrbot-plugin-helloworld
+# astrbot_plugin_arknights_authorization
 
-AstrBot 插件模板 / A template plugin for AstrBot plugin feature
+明日方舟通行证盲盒互动插件（AstrBot）。
 
-> [!NOTE]
-> This repo is just a template of [AstrBot](https://github.com/AstrBotDevs/AstrBot) Plugin.
-> 
-> [AstrBot](https://github.com/AstrBotDevs/AstrBot) is an agentic assistant for both personal and group conversations. It can be deployed across dozens of mainstream instant messaging platforms, including QQ, Telegram, Feishu, DingTalk, Slack, LINE, Discord, Matrix, etc. In addition, it provides a reliable and extensible conversational AI infrastructure for individuals, developers, and teams. Whether you need a personal AI companion, an intelligent customer support agent, an automation assistant, or an enterprise knowledge base, AstrBot enables you to quickly build AI applications directly within your existing messaging workflows.
+## 功能说明
 
-# Supports
+- 支持预设多个盲盒种类（如 VC17、周年系列）。
+- 用户先选择盲盒种类，再输入要开的序号。
+- 开盒结果从对应种类奖池中随机抽取，抽中后从奖池移除。
+- 每个序号在同一种类中仅可选择一次，直到手动刷新该种类。
+- 当某个种类奖池为 0 时会提示用户，可自主选择“刷新该种类”或“切换种类”。
+- 不同盲盒种类奖池彼此独立，互不影响。
 
-- [AstrBot Repo](https://github.com/AstrBotDevs/AstrBot)
-- [AstrBot Plugin Development Docs (Chinese)](https://docs.astrbot.app/dev/star/plugin-new.html)
-- [AstrBot Plugin Development Docs (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
+## 指令
+
+- `/方舟盲盒 列表`：查看可用盲盒种类。
+- `/方舟盲盒 选择 <种类ID>`：选择某个盲盒种类并返回当前种类示意图。
+- `/方舟盲盒 开 <序号>`：开启指定序号盲盒（实际从当前种类奖池随机抽取）。
+- `/方舟盲盒 状态 [种类ID]`：查看当前奖池与可选号剩余情况。
+- `/方舟盲盒 刷新 [种类ID]`：当卡池为 0 时手动刷新当前（或指定）种类。
+
+## 数据文件
+
+插件首次运行会自动生成以下文件：
+
+- `data/box_config.json`：盲盒种类配置（你需要替换为真实图片链接/路径和奖池内容）。
+- `data/pool_state.json`：各盲盒种类当前剩余奖池状态。
+- `data/sessions.json`：用户会话（记住每个用户当前选中的盲盒种类）。
+
+### `box_config.json` 结构示例
+
+```json
+{
+  "vc17": {
+    "name": "2024音律联觉通行证盲盒",
+    "slots": 14,
+    "selection_image": "https://example.com/ak-vc17-selection.jpg",
+    "items": {
+      "vc17-01": {
+        "name": "山 通行证卡套",
+        "image": "https://example.com/ak-vc17-01.jpg"
+      }
+    }
+  }
+}
+```
+
+## 备注
+
+- `selection_image` 建议使用你已经标好序号（从左到右、从上到下）的图。
+- 插件优先尝试发送图片消息；如果当前适配器不支持，会回退为文字 + 图片链接。
