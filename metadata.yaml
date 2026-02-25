@@ -25,7 +25,7 @@ config:
     default: []
   special_box_prices:
     type: dict
-    description: 特殊盒单独定价，格式 {"category_id": price}
+    description: '特殊盒单独定价，格式 {"category_id": price}'
     default: {}
 
 # 兼容格式A：数组定义（部分版本使用）
@@ -71,5 +71,5 @@ config_schema:
     default: []
   special_box_prices:
     type: dict
-    description: 特殊盒单独定价，格式 {"category_id": price}
+    description: '特殊盒单独定价，格式 {"category_id": price}'
     default: {}
