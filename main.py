@@ -11,7 +11,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.3.2")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.3.3")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -27,6 +27,11 @@ class ArknightsBlindBoxPlugin(Star):
         self.runtime_config_path = self.data_dir / "runtime_config.json"
         self.db_path = self.data_dir / "blindbox.db"
 
+        self.legacy_config_path = self.legacy_data_dir / "box_config.json"
+        self.legacy_state_path = self.legacy_data_dir / "pool_state.json"
+        self.legacy_slot_state_path = self.legacy_data_dir / "slot_state.json"
+        self.legacy_runtime_config_path = self.legacy_data_dir / "runtime_config.json"
+
         self.box_config: Dict[str, dict] = {}
         self.pool_state: Dict[str, List[str]] = {}
         self.slot_state: Dict[str, List[int]] = {}
@@ -35,6 +40,8 @@ class ArknightsBlindBoxPlugin(Star):
 
         self._runtime_config_mtime: float = 0
         self._box_config_mtime: float = 0
+        self._pool_state_mtime: float = 0
+        self._slot_state_mtime: float = 0
         self._last_context_sync: float = 0
 
     async def initialize(self):
@@ -548,6 +555,8 @@ class ArknightsBlindBoxPlugin(Star):
 
         self._runtime_config_mtime = self._safe_mtime(self.runtime_config_path)
         self._box_config_mtime = self._safe_mtime(self.config_path)
+        self._pool_state_mtime = self._safe_mtime(self.state_path)
+        self._slot_state_mtime = self._safe_mtime(self.slot_state_path)
 
     def _ensure_states_initialized(self):
         changed_pool = False
@@ -567,8 +576,17 @@ class ArknightsBlindBoxPlugin(Star):
             self._save_json(self.slot_state_path, self.slot_state)
 
     def _maybe_reload_runtime_data(self):
+        # 兼容：如果用户仍在旧 data/ 目录改文件，自动同步到持久化目录。
+        self._sync_legacy_file_if_newer(self.legacy_runtime_config_path, self.runtime_config_path)
+        self._sync_legacy_file_if_newer(self.legacy_config_path, self.config_path)
+        self._sync_legacy_file_if_newer(self.legacy_state_path, self.state_path)
+        self._sync_legacy_file_if_newer(self.legacy_slot_state_path, self.slot_state_path)
+
         runtime_mtime = self._safe_mtime(self.runtime_config_path)
         box_mtime = self._safe_mtime(self.config_path)
+        pool_mtime = self._safe_mtime(self.state_path)
+        slot_mtime = self._safe_mtime(self.slot_state_path)
+
         if runtime_mtime > self._runtime_config_mtime:
             self.runtime_config = self._load_json(self.runtime_config_path, default=self.runtime_config)
             self._runtime_config_mtime = runtime_mtime
@@ -579,6 +597,26 @@ class ArknightsBlindBoxPlugin(Star):
             self._ensure_states_initialized()
             self._box_config_mtime = box_mtime
             logger.info("[arknights_blindbox] 已自动重载 box_config.json")
+
+        if pool_mtime > self._pool_state_mtime:
+            self.pool_state = self._load_json(self.state_path, default=self.pool_state)
+            self._pool_state_mtime = pool_mtime
+            logger.info("[arknights_blindbox] 已自动重载 pool_state.json")
+
+        if slot_mtime > self._slot_state_mtime:
+            self.slot_state = self._load_json(self.slot_state_path, default=self.slot_state)
+            self._slot_state_mtime = slot_mtime
+            logger.info("[arknights_blindbox] 已自动重载 slot_state.json")
+
+    def _sync_legacy_file_if_newer(self, legacy_path: Path, target_path: Path):
+        if not legacy_path.exists() or legacy_path.resolve() == target_path.resolve():
+            return
+        legacy_mtime = self._safe_mtime(legacy_path)
+        target_mtime = self._safe_mtime(target_path)
+        if legacy_mtime > target_mtime:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(legacy_path, target_path)
+            logger.info(f"[arknights_blindbox] 检测到旧目录文件更新，已同步：{legacy_path.name}")
 
     def _sync_runtime_config_from_context(self):
         now = time.time()

@@ -97,3 +97,5 @@
 
 - 本版本开始，插件数据默认优先存放在独立持久化目录（优先 `/opt/AstrBot/data/plugin_data/astrbot_plugin_arknights_authorization`），避免插件热重载/卸载时因代码目录变更导致数据丢失。
 - 升级后会自动尝试把旧 `data/` 目录中的历史数据迁移到持久化目录。
+
+- 本版本支持热重载 `pool_state.json` 与 `slot_state.json`，并兼容监听旧 `data/` 目录更新后自动同步。
