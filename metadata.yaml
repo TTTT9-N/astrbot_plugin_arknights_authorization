@@ -1,10 +1,35 @@
 name: astrbot_plugin_arknights_authorization
 display_name: 明日方舟通行证盲盒
 desc: 明日方舟通行证盲盒互动插件，支持独立奖池、序号唯一、金钱系统与管理员配置。
-version: v1.2.0
+version: v1.2.1
 author: codex
 repo: https://github.com/yourname/astrbot_plugin_arknights_authorization
-# 以下字段用于 AstrBot WebUI 插件配置（若当前版本支持）
+
+# AstrBot WebUI 插件配置（主配置）
+# 说明：部分版本读取 `config`，因此这里使用 `config` 作为标准入口。
+config:
+  initial_balance:
+    type: int
+    description: 新用户注册初始金额
+    default: 200
+  number_box_price:
+    type: int
+    description: 数字盒单抽价格
+    default: 25
+  special_box_default_price:
+    type: int
+    description: 特殊盒默认单抽价格（未单独配置时）
+    default: 40
+  admin_ids:
+    type: list
+    description: 管理员账号ID列表
+    default: []
+  special_box_prices:
+    type: dict
+    description: 特殊盒单独定价，格式 {"category_id": price}
+    default: {}
+
+# 兼容字段：保留给读取 `config_schema` 的版本。
 config_schema:
   initial_balance:
     type: int
