@@ -12,15 +12,14 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.4.7")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.4.8")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
     GUIDE_CANDIDATES = ["selection.jpg", "selection.png", "cover.jpg", "cover.png"]
 
-    def __init__(self, context: Context, config=None):
+    def __init__(self, context: Context):
         super().__init__(context)
-        self.config = config
         self.base_dir = Path(__file__).resolve().parent
         self.legacy_data_dir = self.base_dir / "data"
         self.data_dir = self._resolve_persistent_data_dir()
@@ -453,28 +452,14 @@ class ArknightsBlindBoxPlugin(Star):
         self._last_context_sync = now
 
         conf = None
-
-        # 优先读取 AstrBot 通过 __init__ 注入的插件配置（_conf_schema.json）
-        if self.config:
-            if isinstance(self.config, dict):
-                conf = dict(self.config)
-            else:
+        for getter_name in ("get_config", "get_plugin_config", "get_star_config"):
+            getter = getattr(self.context, getter_name, None)
+            if callable(getter):
                 try:
-                    conf = dict(self.config)
-                except Exception:
-                    conf = None
-
-        # 回退：兼容旧版本/旧加载路径
-        if not isinstance(conf, dict) or not conf:
-            for getter_name in ("get_config", "get_plugin_config", "get_star_config"):
-                getter = getattr(self.context, getter_name, None)
-                if callable(getter):
-                    try:
-                        conf = getter()
-                        break
-                    except Exception as ex:
-                        logger.warning(f"[arknights_blindbox] 读取 WebUI 配置失败({getter_name})：{ex}")
-
+                    conf = getter()
+                    break
+                except Exception as ex:
+                    logger.warning(f"[arknights_blindbox] 读取 WebUI 配置失败({getter_name})：{ex}")
         if not isinstance(conf, dict) or not conf:
             return
 
