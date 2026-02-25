@@ -8,7 +8,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.1.0")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.1.1")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -64,11 +64,12 @@ class ArknightsBlindBoxPlugin(Star):
             remain_slots = len(self.slot_state.get(category_id, []))
             slots = int(category.get("slots", 0))
 
-            if remain_pool == 0:
+            if remain_pool == 0 or remain_slots == 0:
                 yield event.plain_result(
                     f"你已选择【{category.get('name', category_id)}】\n"
-                    "当前卡池剩余：0\n"
-                    "该种类卡池已空。你可以：\n"
+                    f"当前卡池剩余：{remain_pool}\n"
+                    f"当前可选序号数：{remain_slots}/{slots}\n"
+                    "该种类已不可继续开启。你可以：\n"
                     f"1) /方舟盲盒 刷新 {category_id}\n"
                     "2) /方舟盲盒 列表（换种类）"
                 )
@@ -121,6 +122,13 @@ class ArknightsBlindBoxPlugin(Star):
                 return
 
             available_slots = self.slot_state.get(category_id, [])
+            if not available_slots:
+                yield event.plain_result(
+                    f"【{category.get('name', category_id)}】当前可选序号为 0。\n"
+                    f"请发送刷新指令：/方舟盲盒 刷新 {category_id}，或切换种类。"
+                )
+                return
+
             if box_no not in available_slots:
                 yield event.plain_result(
                     f"序号 {box_no} 已被选择，当前可选序号：{self._format_available_slots(category_id)}"
@@ -150,9 +158,9 @@ class ArknightsBlindBoxPlugin(Star):
             for result in self._build_results_with_optional_image(event, msg, item_image):
                 yield result
 
-            if remain_pool == 0:
+            if remain_pool == 0 or remain_slots == 0:
                 yield event.plain_result(
-                    "⚠️ 当前种类卡池已为 0。\n"
+                    "⚠️ 当前种类已不可继续开启。\n"
                     f"如需重置请发送：/方舟盲盒 刷新 {category_id}\n"
                     "或发送 /方舟盲盒 列表 选择其他种类。"
                 )

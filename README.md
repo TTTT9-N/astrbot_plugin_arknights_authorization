@@ -18,7 +18,6 @@
 - `/方舟盲盒 开 <序号>`：开启指定序号盲盒（实际从当前种类奖池随机抽取）。
 - `/方舟盲盒 状态 [种类ID]`：查看当前奖池与可选号剩余情况。
 - `/方舟盲盒 刷新 [种类ID]`：当卡池为 0 时手动刷新当前（或指定）种类。
-- `/方舟盲盒 帮助 `：查看指令
 
 ## 数据文件
 
@@ -26,19 +25,20 @@
 
 - `data/box_config.json`：盲盒种类配置（你需要替换为真实图片链接/路径和奖池内容）。
 - `data/pool_state.json`：各盲盒种类当前剩余奖池状态。
+- `data/slot_state.json`：各盲盒种类当前剩余可选序号状态。
 - `data/sessions.json`：用户会话（记住每个用户当前选中的盲盒种类）。
 
 ### `box_config.json` 结构示例
 
 ```json
 {
-  "31": {
-    "name": "通行证31",
+  "vc17": {
+    "name": "2024音律联觉通行证盲盒",
     "slots": 14,
     "selection_image": "https://example.com/ak-vc17-selection.jpg",
     "items": {
-      "31-01": {
-        "name": "水陈",
+      "vc17-01": {
+        "name": "山 通行证卡套",
         "image": "https://example.com/ak-vc17-01.jpg"
       }
     }
