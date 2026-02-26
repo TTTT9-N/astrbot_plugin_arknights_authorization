@@ -10,24 +10,51 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
-from db_service import (
-    db_ensure_category_state,
-    db_get_balance,
-    db_get_category_state,
-    db_get_kv,
-    db_get_user,
-    db_grant_daily_gift,
-    db_register_user,
-    db_set_category_state,
-    db_set_kv,
-    db_update_balance,
-    init_db,
-)
-from resource_service import scan_categories
-from time_service import utc8_date_hour
+try:
+    from .db_service import (
+        db_ensure_category_state,
+        db_get_balance,
+        db_get_category_state,
+        db_get_kv,
+        db_get_user,
+        db_grant_daily_gift,
+        db_register_user,
+        db_set_category_state,
+        db_set_kv,
+        db_update_balance,
+        init_db,
+    )
+    from .resource_service import (
+        build_category_signature,
+        find_guide_image,
+        parse_prize_items,
+        scan_categories,
+    )
+    from .time_service import utc8_date_hour
+except ImportError:
+    from db_service import (
+        db_ensure_category_state,
+        db_get_balance,
+        db_get_category_state,
+        db_get_kv,
+        db_get_user,
+        db_grant_daily_gift,
+        db_register_user,
+        db_set_category_state,
+        db_set_kv,
+        db_update_balance,
+        init_db,
+    )
+    from resource_service import (
+        build_category_signature,
+        find_guide_image,
+        parse_prize_items,
+        scan_categories,
+    )
+    from time_service import utc8_date_hour
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.1")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.2")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -520,19 +547,12 @@ class ArknightsBlindBoxPlugin(Star):
         return scan_categories(self.number_box_dir, self.special_box_dir, self.GUIDE_CANDIDATES)
 
     def _find_guide_image(self, cat_dir: Path) -> Optional[Path]:
-        from resource_service import find_guide_image
-
         return find_guide_image(cat_dir, self.GUIDE_CANDIDATES)
 
     def _parse_prize_items(self, cat_dir: Path) -> Tuple[Dict[str, dict], List[int]]:
-        from resource_service import parse_prize_items
-
         return parse_prize_items(cat_dir, self.GUIDE_CANDIDATES)
 
     def _build_category_signature(self, item_ids: List[str], slots: List[int]) -> str:
-        # 保留兼容；实际签名逻辑已拆分到 resource_service.py
-        from resource_service import build_category_signature
-
         return build_category_signature(item_ids, slots)
 
     def _ensure_default_runtime_config(self):
