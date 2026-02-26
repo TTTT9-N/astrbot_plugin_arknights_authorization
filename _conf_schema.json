@@ -41,5 +41,11 @@
     "description": "允许管理员设置余额",
     "hint": "开启后可用 /方舟盲盒 管理员 余额 <user_id> <金额> [group_id]",
     "default": true
+  },
+  "open_cooldown_seconds": {
+    "type": "int",
+    "description": "开盲盒冷却时间（秒）",
+    "hint": "同一用户在同一群组开完一发后需等待的秒数，默认 10，设置为 0 可关闭冷却",
+    "default": 10
   }
 }

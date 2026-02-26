@@ -73,6 +73,7 @@ resources/number_box/
 - `special_box_prices`：特殊盒单独定价对象（如 `{"sp_xxx": 66}`）
 - `daily_gift_amount`：每日赠送金额（UTC+8 06:00 自动发放，默认 100）
 - `admin_balance_set_enabled`：是否允许管理员使用余额设置指令（默认 true）
+- `open_cooldown_seconds`：开盲盒冷却秒数（默认 10，可在 WebUI 修改）
 
 > 插件已改为使用仓库根目录 `_conf_schema.json` 注册 WebUI 配置项（符合 AstrBot 插件配置文档）。
 
@@ -85,4 +86,4 @@ resources/number_box/
 - `time_service.py`：时间工具（UTC+8 日期/小时）
 
 
-- 冷却机制：同一用户在同一群组开完一发后需等待 10 秒才能继续开启。
+- 冷却机制：同一用户在同一群组开完一发后需等待冷却时间后才能继续开启（默认 10 秒，可在 WebUI 配置）。

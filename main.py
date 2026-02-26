@@ -54,7 +54,7 @@ except ImportError:
     from time_service import utc8_date_hour
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.3")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.4")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -81,7 +81,6 @@ class ArknightsBlindBoxPlugin(Star):
         self._runtime_config_mtime: float = 0
         self._last_context_sync: float = 0
         self._daily_gift_task: Optional[asyncio.Task] = None
-        self._open_cooldown_seconds: int = 10
         self._last_open_ts: Dict[str, float] = {}
 
     async def initialize(self):
@@ -235,12 +234,14 @@ class ArknightsBlindBoxPlugin(Star):
                 yield event.plain_result(f"余额不足，当前余额：{balance} 元，当前单抽价格：{price} 元")
                 return
 
-            cooldown_key = f"{group_id}:{user_id}"
+            cooldown_key = self._build_session_key(event)
             now_ts = time.time()
-            last_ts = self._last_open_ts.get(cooldown_key, 0)
-            remain_cd = self._open_cooldown_seconds - int(now_ts - last_ts)
+            cooldown_seconds = self._get_open_cooldown_seconds()
+            last_ts = self._get_last_open_ts(cooldown_key)
+            remain_cd = cooldown_seconds - (now_ts - last_ts)
             if remain_cd > 0:
-                yield event.plain_result(f"操作过快，请等待 {remain_cd} 秒后再开盲盒。")
+                wait_sec = int(remain_cd) + (0 if remain_cd.is_integer() else 1)
+                yield event.plain_result(f"操作过快，请等待 {wait_sec} 秒后再开盲盒。")
                 return
 
             selected = random.choice(remain_items)
@@ -248,7 +249,7 @@ class ArknightsBlindBoxPlugin(Star):
             remain_slots.remove(choose_slot)
             self._db_set_category_state(category_id, remain_items, remain_slots)
             self._db_update_balance(group_id, user_id, balance - price)
-            self._last_open_ts[cooldown_key] = now_ts
+            self._set_last_open_ts(cooldown_key, now_ts)
 
             item = category["items"][selected]
             prize_image = item.get("image")
@@ -535,7 +536,7 @@ class ArknightsBlindBoxPlugin(Star):
             return
 
         merged = dict(self.runtime_config)
-        for key in ["initial_balance", "number_box_price", "special_box_default_price", "admin_ids", "special_box_prices", "daily_gift_amount", "admin_balance_set_enabled"]:
+        for key in ["initial_balance", "number_box_price", "special_box_default_price", "admin_ids", "special_box_prices", "daily_gift_amount", "admin_balance_set_enabled", "open_cooldown_seconds"]:
             if key in conf:
                 merged[key] = conf[key]
         if merged != self.runtime_config:
@@ -574,6 +575,7 @@ class ArknightsBlindBoxPlugin(Star):
             "special_box_prices": {},
             "daily_gift_amount": 100,
             "admin_balance_set_enabled": True,
+            "open_cooldown_seconds": 10,
         })
 
 
@@ -664,6 +666,27 @@ class ArknightsBlindBoxPlugin(Star):
 
     def _db_grant_daily_gift(self, amount: int) -> int:
         return db_grant_daily_gift(self.db_path, amount)
+
+    def _get_open_cooldown_seconds(self) -> int:
+        value = int(self.runtime_config.get("open_cooldown_seconds", 10))
+        return max(0, value)
+
+    def _get_last_open_ts(self, cooldown_key: str) -> float:
+        if cooldown_key in self._last_open_ts:
+            return self._last_open_ts[cooldown_key]
+        db_value = self._db_get_kv(f"last_open_ts:{cooldown_key}")
+        if not db_value:
+            return 0.0
+        try:
+            last_ts = float(db_value)
+        except Exception:
+            return 0.0
+        self._last_open_ts[cooldown_key] = last_ts
+        return last_ts
+
+    def _set_last_open_ts(self, cooldown_key: str, ts: float):
+        self._last_open_ts[cooldown_key] = float(ts)
+        self._db_set_kv(f"last_open_ts:{cooldown_key}", str(ts))
 
     def _grant_daily_gift_if_due(self) -> bool:
         amount = int(self.runtime_config.get("daily_gift_amount", 100))
