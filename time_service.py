@@ -1,3 +1,5 @@
+"""Time utility helpers for blind-box plugin."""
+
 import time
 from typing import Tuple
 

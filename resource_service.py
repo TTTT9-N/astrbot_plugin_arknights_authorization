@@ -1,3 +1,5 @@
+"""Resource scanning and parsing helpers for blind-box plugin."""
+
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
