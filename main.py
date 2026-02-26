@@ -31,6 +31,7 @@ try:
         scan_categories,
     )
     from .time_service import utc8_date_hour
+    from .inventory_service import add_inventory_item, get_user_inventory, init_inventory_table
 except ImportError:
     from db_service import (
         db_ensure_category_state,
@@ -52,9 +53,10 @@ except ImportError:
         scan_categories,
     )
     from time_service import utc8_date_hour
+    from inventory_service import add_inventory_item, get_user_inventory, init_inventory_table
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.4")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.5")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -134,6 +136,26 @@ class ArknightsBlindBoxPlugin(Star):
                 yield event.plain_result("你还未注册，请先发送：/方舟盲盒 注册")
                 return
             yield event.plain_result(f"当前余额：{balance} 元\n当前群：{group_id}")
+            return
+
+        if action in {"库存", "bag", "inventory"}:
+            identity = self._get_identity(event)
+            if identity is None:
+                yield event.plain_result("无法识别你的账号ID，暂时无法查询库存。")
+                return
+            group_id, user_id = identity
+            if self._db_get_user(group_id, user_id) is None:
+                yield event.plain_result("你还未注册，请先发送：/方舟盲盒 注册")
+                return
+            rows = self._db_get_user_inventory(group_id, user_id)
+            if not rows:
+                yield event.plain_result(f"当前库存为空。\n当前群：{group_id}")
+                return
+            lines = ["当前库存："]
+            for category_id, item_name, count in rows:
+                lines.append(f"- [{category_id}] {item_name} x{count}")
+            lines.append(f"\n当前群：{group_id}")
+            yield event.plain_result("\n".join(lines))
             return
 
         if action in {"列表", "list", "types"}:
@@ -252,6 +274,7 @@ class ArknightsBlindBoxPlugin(Star):
             self._set_last_open_ts(cooldown_key, now_ts)
 
             item = category["items"][selected]
+            self._db_add_inventory_item(group_id, user_id, category_id, item["name"], 1)
             prize_image = item.get("image")
             msg = (
                 f"你选择了第 {choose_slot} 号盲盒，开启结果：\n"
@@ -395,13 +418,14 @@ class ArknightsBlindBoxPlugin(Star):
             "明日方舟通行证盲盒指令：\n"
             "1) /方舟盲盒 注册\n"
             "2) /方舟盲盒 钱包\n"
-            "3) /方舟盲盒 列表\n"
-            "4) /方舟盲盒 选择 <种类ID>\n"
-            "5) /方舟盲盒 开 <序号>\n"
-            "6) /方舟盲盒 状态 [种类ID]\n"
-            "7) /方舟盲盒 刷新 [种类ID]\n"
-            "8) /方舟盲盒 重载资源\n"
-            "9) /方舟盲盒 管理员 ...（含余额设置）"
+            "3) /方舟盲盒 库存\n"
+            "4) /方舟盲盒 列表\n"
+            "5) /方舟盲盒 选择 <种类ID>\n"
+            "6) /方舟盲盒 开 <序号>\n"
+            "7) /方舟盲盒 状态 [种类ID]\n"
+            "8) /方舟盲盒 刷新 [种类ID]\n"
+            "9) /方舟盲盒 重载资源\n"
+            "10) /方舟盲盒 管理员 ...（含余额设置）"
         )
 
     def _build_category_list_text(self) -> str:
@@ -629,6 +653,7 @@ class ArknightsBlindBoxPlugin(Star):
 
     def _init_db(self):
         init_db(self.db_path)
+        init_inventory_table(self.db_path)
 
     def _db_get_user(self, group_id: str, user_id: str):
         return db_get_user(self.db_path, group_id, user_id)
@@ -641,6 +666,12 @@ class ArknightsBlindBoxPlugin(Star):
 
     def _db_update_balance(self, group_id: str, user_id: str, balance: int):
         db_update_balance(self.db_path, group_id, user_id, balance)
+
+    def _db_add_inventory_item(self, group_id: str, user_id: str, category_id: str, item_name: str, count: int = 1):
+        add_inventory_item(self.db_path, group_id, user_id, category_id, item_name, count)
+
+    def _db_get_user_inventory(self, group_id: str, user_id: str):
+        return get_user_inventory(self.db_path, group_id, user_id)
 
     def _db_ensure_category_state(self, category_id: str, category: dict):
         db_ensure_category_state(self.db_path, category_id, category)
