@@ -56,7 +56,7 @@ except ImportError:
     from inventory_service import add_inventory_item, get_user_inventory, init_inventory_table
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.5")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.8")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -110,6 +110,9 @@ class ArknightsBlindBoxPlugin(Star):
             return
 
         action = args[0].lower()
+
+        if self._is_blacklisted(event):
+            return
 
         if action in {"注册", "signup", "reg"}:
             identity = self._get_identity(event)
@@ -332,7 +335,7 @@ class ArknightsBlindBoxPlugin(Star):
 
     def _handle_admin_command(self, event: AstrMessageEvent, args: List[str]):
         if not args:
-            return [event.plain_result("管理员指令：列表/添加 <user_id>/移除 <user_id>/特殊定价 <种类ID> <金额>/余额 <user_id> <金额> [group_id]")]
+            return [event.plain_result("管理员指令：\n- 管理员 列表|添加|移除 <user_id>\n- 特殊定价 <种类ID> <金额>\n- 余额 <user_id> <金额> [group_id]\n- 黑名单 列表|添加|移除 <user_id>")]
 
         identity = self._get_identity(event)
         if identity is None:
@@ -340,11 +343,13 @@ class ArknightsBlindBoxPlugin(Star):
         _, current_user_id = identity
         admins = self._get_admin_ids()
         action = args[0]
+        action_alias = {"list": "列表", "add": "添加", "remove": "移除", "setprice": "特殊定价", "setbalance": "余额", "blacklist": "黑名单"}
+        action = action_alias.get(action, action)
 
         if action == "列表":
             return [event.plain_result(f"管理员列表：{', '.join(admins) if admins else '暂无'}")]
 
-        if action in {"添加", "add"}:
+        if action == "添加":
             if len(args) < 2:
                 return [event.plain_result("用法：/方舟盲盒 管理员 添加 <user_id>")]
             target = args[1]
@@ -356,7 +361,7 @@ class ArknightsBlindBoxPlugin(Star):
                 self._save_json(self.runtime_config_path, self.runtime_config)
             return [event.plain_result(f"已添加管理员：{target}")]
 
-        if action in {"移除", "remove"}:
+        if action == "移除":
             if len(args) < 2:
                 return [event.plain_result("用法：/方舟盲盒 管理员 移除 <user_id>")]
             target = args[1]
@@ -368,7 +373,7 @@ class ArknightsBlindBoxPlugin(Star):
                 self._save_json(self.runtime_config_path, self.runtime_config)
             return [event.plain_result(f"已移除管理员：{target}")]
 
-        if action in {"特殊定价", "setprice"}:
+        if action == "特殊定价":
             if len(args) < 3:
                 return [event.plain_result("用法：/方舟盲盒 管理员 特殊定价 <种类ID> <金额>")]
             if current_user_id not in admins:
@@ -386,7 +391,7 @@ class ArknightsBlindBoxPlugin(Star):
             self._save_json(self.runtime_config_path, self.runtime_config)
             return [event.plain_result(f"已设置特殊盒 {category_id} 价格：{amount} 元")]
 
-        if action in {"余额", "setbalance"}:
+        if action == "余额":
             if len(args) < 3:
                 return [event.plain_result("用法：/方舟盲盒 管理员 余额 <user_id> <金额> [group_id]")]
             if current_user_id not in admins:
@@ -401,6 +406,34 @@ class ArknightsBlindBoxPlugin(Star):
                 return [event.plain_result(f"用户 {target_user_id} 在群 {target_group_id} 未注册。")]
             self._db_update_balance(target_group_id, target_user_id, int(amount))
             return [event.plain_result(f"已设置余额：群 {target_group_id} 用户 {target_user_id} = {amount} 元")]
+
+        if action == "黑名单":
+            if current_user_id not in admins:
+                return [event.plain_result("仅管理员可管理黑名单。")]
+            if len(args) < 2:
+                return [event.plain_result("用法：/方舟盲盒 管理员 黑名单 列表|添加 <user_id>|移除 <user_id>")]
+            sub_action = {"list": "列表", "add": "添加", "remove": "移除"}.get(args[1], args[1])
+            blacklist = self._get_blacklist_user_ids()
+            if sub_action == "列表":
+                return [event.plain_result(f"黑名单列表：{', '.join(blacklist) if blacklist else '暂无'}")]
+            if len(args) < 3:
+                return [event.plain_result("用法：/方舟盲盒 管理员 黑名单 添加 <user_id> 或 /方舟盲盒 管理员 黑名单 移除 <user_id>")]
+            target = self._parse_user_id_input(args[2])
+            if not target:
+                return [event.plain_result("无法识别用户ID，请直接填写数字ID。")]
+            if sub_action == "添加":
+                if target not in blacklist:
+                    blacklist.append(target)
+                    self.runtime_config["blacklist_user_ids"] = blacklist
+                    self._save_json(self.runtime_config_path, self.runtime_config)
+                return [event.plain_result(f"已加入黑名单：{target}")]
+            if sub_action == "移除":
+                if target in blacklist:
+                    blacklist.remove(target)
+                    self.runtime_config["blacklist_user_ids"] = blacklist
+                    self._save_json(self.runtime_config_path, self.runtime_config)
+                return [event.plain_result(f"已移出黑名单：{target}")]
+            return [event.plain_result("未知黑名单指令。")]
 
         return [event.plain_result("未知管理员指令。")]
 
@@ -425,7 +458,7 @@ class ArknightsBlindBoxPlugin(Star):
             "7) /方舟盲盒 状态 [种类ID]\n"
             "8) /方舟盲盒 刷新 [种类ID]\n"
             "9) /方舟盲盒 重载资源\n"
-            "10) /方舟盲盒 管理员 ...（含余额设置）"
+            "10) /方舟盲盒 管理员 <列表|添加|移除|特殊定价|余额|黑名单> ..."
         )
 
     def _build_category_list_text(self) -> str:
@@ -501,8 +534,63 @@ class ArknightsBlindBoxPlugin(Star):
         identity = self._get_identity(event)
         return bool(identity and identity[1] in self._get_admin_ids())
 
+    def _normalize_id_list(self, value) -> List[str]:
+        if value is None:
+            return []
+        raw_list = []
+        if isinstance(value, (list, tuple, set)):
+            raw_list = list(value)
+        elif isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return []
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    raw_list = parsed
+                else:
+                    raw_list = [text]
+            except Exception:
+                raw_list = [v.strip() for v in text.replace("，", ",").split(",") if v.strip()]
+        else:
+            raw_list = [value]
+
+        result: List[str] = []
+        for v in raw_list:
+            t = str(v).strip()
+            if t and t.lower() not in {"none", "null", "[]"}:
+                result.append(t)
+        return result
+
+
+    def _parse_user_id_input(self, text: str) -> str:
+        raw = str(text or "").strip()
+        if not raw:
+            return ""
+        if raw.isdigit():
+            return raw
+        for key in ("qq=", "id=", "user_id="):
+            idx = raw.find(key)
+            if idx >= 0:
+                start = idx + len(key)
+                digits = []
+                while start < len(raw) and raw[start].isdigit():
+                    digits.append(raw[start])
+                    start += 1
+                if digits:
+                    return "".join(digits)
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        return digits
+
     def _get_admin_ids(self) -> List[str]:
-        return [str(v) for v in self.runtime_config.get("admin_ids", [])]
+        return self._normalize_id_list(self.runtime_config.get("admin_ids", []))
+
+    def _get_blacklist_user_ids(self) -> List[str]:
+        return self._normalize_id_list(self.runtime_config.get("blacklist_user_ids", []))
+
+    def _is_blacklisted(self, event: AstrMessageEvent) -> bool:
+        identity = self._get_identity(event)
+        return bool(identity and identity[1] in self._get_blacklist_user_ids())
 
     def _get_category_price(self, category_id: str) -> int:
         category = self.categories.get(category_id, {})
@@ -560,7 +648,7 @@ class ArknightsBlindBoxPlugin(Star):
             return
 
         merged = dict(self.runtime_config)
-        for key in ["initial_balance", "number_box_price", "special_box_default_price", "admin_ids", "special_box_prices", "daily_gift_amount", "admin_balance_set_enabled", "open_cooldown_seconds"]:
+        for key in ["initial_balance", "number_box_price", "special_box_default_price", "admin_ids", "special_box_prices", "daily_gift_amount", "daily_gift_hour_utc8", "admin_balance_set_enabled", "open_cooldown_seconds", "blacklist_user_ids"]:
             if key in conf:
                 merged[key] = conf[key]
         if merged != self.runtime_config:
@@ -598,8 +686,10 @@ class ArknightsBlindBoxPlugin(Star):
             "admin_ids": [],
             "special_box_prices": {},
             "daily_gift_amount": 100,
+            "daily_gift_hour_utc8": 6,
             "admin_balance_set_enabled": True,
             "open_cooldown_seconds": 10,
+            "blacklist_user_ids": [],
         })
 
 
@@ -724,7 +814,9 @@ class ArknightsBlindBoxPlugin(Star):
         if amount <= 0:
             return False
         current_date, current_hour = self._utc8_date_hour()
-        if current_hour < 6:
+        grant_hour = int(self.runtime_config.get("daily_gift_hour_utc8", 6))
+        grant_hour = min(23, max(0, grant_hour))
+        if current_hour < grant_hour:
             return False
         last_date = self._db_get_kv("last_daily_gift_date")
         if last_date == current_date:

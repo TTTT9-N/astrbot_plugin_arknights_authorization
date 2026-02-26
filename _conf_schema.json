@@ -32,8 +32,8 @@
   },
   "daily_gift_amount": {
     "type": "int",
-    "description": "每日赠送金额（UTC+8 06:00）",
-    "hint": "每天早上6点自动给已注册用户发放该金额，<=0 表示关闭",
+    "description": "每日赠送金额（UTC+8 可配置时刻）",
+    "hint": "在 daily_gift_hour_utc8 指定的小时自动给已注册用户发放该金额，<=0 表示关闭",
     "default": 100
   },
   "admin_balance_set_enabled": {
@@ -47,5 +47,17 @@
     "description": "开盲盒冷却时间（秒）",
     "hint": "同一用户在同一群组开完一发后需等待的秒数，默认 10，设置为 0 可关闭冷却",
     "default": 10
+  },
+  "blacklist_user_ids": {
+    "type": "list",
+    "description": "黑名单用户ID列表",
+    "hint": "列表中的用户将无法使用任何 /方舟盲盒 指令，支持 [\"123456\",\"10001\"] 或 \"123456,10001\"",
+    "default": []
+  },
+  "daily_gift_hour_utc8": {
+    "type": "int",
+    "description": "每日赠送发放时间（UTC+8 小时）",
+    "hint": "0-23，默认 6，表示每天 UTC+8 的该整点后发放一次",
+    "default": 6
   }
 }
