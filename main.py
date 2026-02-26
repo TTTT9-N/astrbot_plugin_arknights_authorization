@@ -1,9 +1,7 @@
 import asyncio
 import json
 import random
-import re
 import shutil
-import sqlite3
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -12,8 +10,24 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
+from db_service import (
+    db_ensure_category_state,
+    db_get_balance,
+    db_get_category_state,
+    db_get_kv,
+    db_get_user,
+    db_grant_daily_gift,
+    db_register_user,
+    db_set_category_state,
+    db_set_kv,
+    db_update_balance,
+    init_db,
+)
+from resource_service import scan_categories
+from time_service import utc8_date_hour
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.0")
+
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.1")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -503,60 +517,23 @@ class ArknightsBlindBoxPlugin(Star):
             self._db_ensure_category_state(category_id, category)
 
     def _scan_categories(self) -> Dict[str, dict]:
-        result: Dict[str, dict] = {}
-        for box_type, root in (("number", self.number_box_dir), ("special", self.special_box_dir)):
-            if not root.exists():
-                continue
-            for cat_dir in root.iterdir():
-                if not cat_dir.is_dir():
-                    continue
-                category_id = cat_dir.name
-                guide = self._find_guide_image(cat_dir)
-                items, slots = self._parse_prize_items(cat_dir)
-                if not items or not slots:
-                    continue
-                result[category_id] = {
-                    "id": category_id,
-                    "box_type": box_type,
-                    "guide_image": guide,
-                    "items": items,
-                    "slot_total": len(slots),
-                    "slots": sorted(slots),
-                    "signature": self._build_category_signature(list(items.keys()), slots),
-                }
-        return result
+        return scan_categories(self.number_box_dir, self.special_box_dir, self.GUIDE_CANDIDATES)
 
     def _find_guide_image(self, cat_dir: Path) -> Optional[Path]:
-        for n in self.GUIDE_CANDIDATES:
-            p = cat_dir / n
-            if p.exists():
-                return p
-        return None
+        from resource_service import find_guide_image
+
+        return find_guide_image(cat_dir, self.GUIDE_CANDIDATES)
 
     def _parse_prize_items(self, cat_dir: Path) -> Tuple[Dict[str, dict], List[int]]:
-        slots: List[int] = []
-        items: Dict[str, dict] = {}
-        pattern = re.compile(r"^(\d+)[-_](.+)$")
-        for f in sorted(cat_dir.iterdir()):
-            if not f.is_file():
-                continue
-            if f.name in self.GUIDE_CANDIDATES:
-                continue
-            if f.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
-                continue
-            m = pattern.match(f.stem)
-            if not m:
-                continue
-            slot_no = int(m.group(1))
-            display_name = m.group(2).strip() or f.stem
-            item_id = f.name
-            items[item_id] = {"name": display_name, "image": f, "slot_no": slot_no}
-            if slot_no not in slots:
-                slots.append(slot_no)
-        return items, sorted(slots)
+        from resource_service import parse_prize_items
+
+        return parse_prize_items(cat_dir, self.GUIDE_CANDIDATES)
 
     def _build_category_signature(self, item_ids: List[str], slots: List[int]) -> str:
-        return "|".join(sorted(item_ids)) + "::" + ",".join(map(str, sorted(slots)))
+        # 保留兼容；实际签名逻辑已拆分到 resource_service.py
+        from resource_service import build_category_signature
+
+        return build_category_signature(item_ids, slots)
 
     def _ensure_default_runtime_config(self):
         if self.runtime_config_path.exists():
@@ -621,154 +598,44 @@ class ArknightsBlindBoxPlugin(Star):
                     shutil.copytree(src, dst, dirs_exist_ok=True)
 
     def _init_db(self):
-        conn = sqlite3.connect(self.db_path)
-        try:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS user_wallet (
-                    group_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    balance INTEGER NOT NULL,
-                    registered_at INTEGER NOT NULL,
-                    PRIMARY KEY (group_id, user_id)
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS category_state (
-                    category_id TEXT PRIMARY KEY,
-                    signature TEXT NOT NULL,
-                    remaining_items TEXT NOT NULL,
-                    remaining_slots TEXT NOT NULL,
-                    updated_at INTEGER NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS system_kv (
-                    k TEXT PRIMARY KEY,
-                    v TEXT NOT NULL
-                )
-                """
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        init_db(self.db_path)
 
     def _db_get_user(self, group_id: str, user_id: str):
-        conn = sqlite3.connect(self.db_path)
-        try:
-            cur = conn.execute(
-                "SELECT group_id,user_id,balance,registered_at FROM user_wallet WHERE group_id=? AND user_id=?",
-                (group_id, user_id),
-            )
-            return cur.fetchone()
-        finally:
-            conn.close()
+        return db_get_user(self.db_path, group_id, user_id)
 
     def _db_get_balance(self, group_id: str, user_id: str) -> Optional[int]:
-        row = self._db_get_user(group_id, user_id)
-        return int(row[2]) if row else None
+        return db_get_balance(self.db_path, group_id, user_id)
 
     def _db_register_user(self, group_id: str, user_id: str, balance: int):
-        conn = sqlite3.connect(self.db_path)
-        try:
-            conn.execute(
-                "INSERT OR REPLACE INTO user_wallet(group_id,user_id,balance,registered_at) VALUES (?,?,?,?)",
-                (group_id, user_id, int(balance), int(time.time())),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        db_register_user(self.db_path, group_id, user_id, balance)
 
     def _db_update_balance(self, group_id: str, user_id: str, balance: int):
-        conn = sqlite3.connect(self.db_path)
-        try:
-            conn.execute("UPDATE user_wallet SET balance=? WHERE group_id=? AND user_id=?", (int(balance), group_id, user_id))
-            conn.commit()
-        finally:
-            conn.close()
+        db_update_balance(self.db_path, group_id, user_id, balance)
 
     def _db_ensure_category_state(self, category_id: str, category: dict):
-        conn = sqlite3.connect(self.db_path)
-        try:
-            cur = conn.execute("SELECT signature FROM category_state WHERE category_id=?", (category_id,))
-            row = cur.fetchone()
-            if row is None or row[0] != category["signature"]:
-                conn.execute(
-                    "INSERT OR REPLACE INTO category_state(category_id,signature,remaining_items,remaining_slots,updated_at) VALUES (?,?,?,?,?)",
-                    (
-                        category_id,
-                        category["signature"],
-                        json.dumps(list(category["items"].keys()), ensure_ascii=False),
-                        json.dumps(list(category["slots"]), ensure_ascii=False),
-                        int(time.time()),
-                    ),
-                )
-                conn.commit()
-        finally:
-            conn.close()
+        db_ensure_category_state(self.db_path, category_id, category)
 
     def _db_get_category_state(self, category_id: str) -> Tuple[List[str], List[int]]:
-        conn = sqlite3.connect(self.db_path)
-        try:
-            cur = conn.execute("SELECT remaining_items, remaining_slots FROM category_state WHERE category_id=?", (category_id,))
-            row = cur.fetchone()
-            if not row:
-                return [], []
-            items = json.loads(row[0]) if row[0] else []
-            slots = json.loads(row[1]) if row[1] else []
-            return list(items), sorted(int(v) for v in slots)
-        finally:
-            conn.close()
+        return db_get_category_state(self.db_path, category_id)
 
     def _db_set_category_state(self, category_id: str, items: List[str], slots: List[int]):
-        conn = sqlite3.connect(self.db_path)
-        try:
-            signature = self.categories.get(category_id, {}).get("signature", "")
-            conn.execute(
-                "UPDATE category_state SET signature=?, remaining_items=?, remaining_slots=?, updated_at=? WHERE category_id=?",
-                (signature, json.dumps(items, ensure_ascii=False), json.dumps(slots, ensure_ascii=False), int(time.time()), category_id),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        signature = self.categories.get(category_id, {}).get("signature", "")
+        db_set_category_state(self.db_path, category_id, signature, items, slots)
 
     def _db_reset_category_state(self, category_id: str, category: dict):
         self._db_set_category_state(category_id, list(category["items"].keys()), list(category["slots"]))
 
     def _utc8_date_hour(self) -> Tuple[str, int]:
-        ts = time.time() + 8 * 3600
-        t = time.gmtime(ts)
-        return time.strftime("%Y-%m-%d", t), t.tm_hour
+        return utc8_date_hour()
 
     def _db_get_kv(self, key: str) -> Optional[str]:
-        conn = sqlite3.connect(self.db_path)
-        try:
-            cur = conn.execute("SELECT v FROM system_kv WHERE k=?", (key,))
-            row = cur.fetchone()
-            return str(row[0]) if row else None
-        finally:
-            conn.close()
+        return db_get_kv(self.db_path, key)
 
     def _db_set_kv(self, key: str, value: str):
-        conn = sqlite3.connect(self.db_path)
-        try:
-            conn.execute("INSERT OR REPLACE INTO system_kv(k,v) VALUES (?,?)", (key, str(value)))
-            conn.commit()
-        finally:
-            conn.close()
+        db_set_kv(self.db_path, key, value)
 
     def _db_grant_daily_gift(self, amount: int) -> int:
-        conn = sqlite3.connect(self.db_path)
-        try:
-            cur = conn.execute("UPDATE user_wallet SET balance = balance + ?", (int(amount),))
-            conn.commit()
-            return int(cur.rowcount or 0)
-        finally:
-            conn.close()
+        return db_grant_daily_gift(self.db_path, amount)
 
     def _grant_daily_gift_if_due(self) -> bool:
         amount = int(self.runtime_config.get("daily_gift_amount", 100))

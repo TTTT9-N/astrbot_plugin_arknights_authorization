@@ -75,3 +75,11 @@ resources/number_box/
 - `admin_balance_set_enabled`：是否允许管理员使用余额设置指令（默认 true）
 
 > 插件已改为使用仓库根目录 `_conf_schema.json` 注册 WebUI 配置项（符合 AstrBot 插件配置文档）。
+
+
+## 代码结构
+
+- `main.py`：插件入口、指令分发、业务流程编排
+- `db_service.py`：SQLite 读写与状态持久化
+- `resource_service.py`：资源扫描、奖品解析、签名构建
+- `time_service.py`：时间工具（UTC+8 日期/小时）
