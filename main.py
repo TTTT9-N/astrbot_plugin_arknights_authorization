@@ -56,7 +56,7 @@ except ImportError:
     from inventory_service import add_inventory_item, get_user_inventory, init_inventory_table
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.5")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.6")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -110,6 +110,10 @@ class ArknightsBlindBoxPlugin(Star):
             return
 
         action = args[0].lower()
+
+        if self._is_blacklisted(event):
+            yield event.plain_result("你已被加入黑名单，无法使用本插件指令。")
+            return
 
         if action in {"注册", "signup", "reg"}:
             identity = self._get_identity(event)
@@ -504,6 +508,13 @@ class ArknightsBlindBoxPlugin(Star):
     def _get_admin_ids(self) -> List[str]:
         return [str(v) for v in self.runtime_config.get("admin_ids", [])]
 
+    def _get_blacklist_user_ids(self) -> List[str]:
+        return [str(v) for v in self.runtime_config.get("blacklist_user_ids", [])]
+
+    def _is_blacklisted(self, event: AstrMessageEvent) -> bool:
+        identity = self._get_identity(event)
+        return bool(identity and identity[1] in self._get_blacklist_user_ids())
+
     def _get_category_price(self, category_id: str) -> int:
         category = self.categories.get(category_id, {})
         if category.get("box_type") == "number":
@@ -560,7 +571,7 @@ class ArknightsBlindBoxPlugin(Star):
             return
 
         merged = dict(self.runtime_config)
-        for key in ["initial_balance", "number_box_price", "special_box_default_price", "admin_ids", "special_box_prices", "daily_gift_amount", "admin_balance_set_enabled", "open_cooldown_seconds"]:
+        for key in ["initial_balance", "number_box_price", "special_box_default_price", "admin_ids", "special_box_prices", "daily_gift_amount", "admin_balance_set_enabled", "open_cooldown_seconds", "blacklist_user_ids"]:
             if key in conf:
                 merged[key] = conf[key]
         if merged != self.runtime_config:
@@ -600,6 +611,7 @@ class ArknightsBlindBoxPlugin(Star):
             "daily_gift_amount": 100,
             "admin_balance_set_enabled": True,
             "open_cooldown_seconds": 10,
+            "blacklist_user_ids": [],
         })
 
 

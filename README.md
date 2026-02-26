@@ -75,6 +75,7 @@ resources/number_box/
 - `daily_gift_amount`：每日赠送金额（UTC+8 06:00 自动发放，默认 100）
 - `admin_balance_set_enabled`：是否允许管理员使用余额设置指令（默认 true）
 - `open_cooldown_seconds`：开盲盒冷却秒数（默认 10，可在 WebUI 修改）
+- `blacklist_user_ids`：黑名单用户 ID 列表（命中后无法使用任何 `/方舟盲盒` 指令）
 
 > 插件已改为使用仓库根目录 `_conf_schema.json` 注册 WebUI 配置项（符合 AstrBot 插件配置文档）。
 
@@ -91,3 +92,4 @@ resources/number_box/
 
 
 - 库存系统：用户抽到的奖品会自动进入库存并持久化保存（按群隔离），使用 `/方舟盲盒 库存` 查看。
+- 黑名单机制：`blacklist_user_ids` 中的用户将被拒绝使用所有插件指令。
