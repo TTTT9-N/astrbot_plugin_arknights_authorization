@@ -505,11 +505,39 @@ class ArknightsBlindBoxPlugin(Star):
         identity = self._get_identity(event)
         return bool(identity and identity[1] in self._get_admin_ids())
 
+    def _normalize_id_list(self, value) -> List[str]:
+        if value is None:
+            return []
+        raw_list = []
+        if isinstance(value, (list, tuple, set)):
+            raw_list = list(value)
+        elif isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return []
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    raw_list = parsed
+                else:
+                    raw_list = [text]
+            except Exception:
+                raw_list = [v.strip() for v in text.replace("，", ",").split(",") if v.strip()]
+        else:
+            raw_list = [value]
+
+        result: List[str] = []
+        for v in raw_list:
+            t = str(v).strip()
+            if t and t.lower() not in {"none", "null", "[]"}:
+                result.append(t)
+        return result
+
     def _get_admin_ids(self) -> List[str]:
-        return [str(v) for v in self.runtime_config.get("admin_ids", [])]
+        return self._normalize_id_list(self.runtime_config.get("admin_ids", []))
 
     def _get_blacklist_user_ids(self) -> List[str]:
-        return [str(v) for v in self.runtime_config.get("blacklist_user_ids", [])]
+        return self._normalize_id_list(self.runtime_config.get("blacklist_user_ids", []))
 
     def _is_blacklisted(self, event: AstrMessageEvent) -> bool:
         identity = self._get_identity(event)
