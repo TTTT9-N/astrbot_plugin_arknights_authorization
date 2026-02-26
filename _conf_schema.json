@@ -1,0 +1,45 @@
+{
+  "initial_balance": {
+    "type": "int",
+    "description": "新用户注册初始金额",
+    "hint": "用户首次发送 /方舟盲盒 注册 时获得的初始金额",
+    "default": 200
+  },
+  "number_box_price": {
+    "type": "int",
+    "description": "数字盒单抽价格",
+    "hint": "number_box 下所有种类的默认单抽花费",
+    "default": 25
+  },
+  "special_box_default_price": {
+    "type": "int",
+    "description": "特殊盒默认单抽价格",
+    "hint": "special_box 下未单独定价种类的默认价格",
+    "default": 40
+  },
+  "admin_ids": {
+    "type": "list",
+    "description": "管理员账号ID列表",
+    "hint": "可管理盲盒配置的用户ID列表，示例：[\"123456\",\"10001\"]",
+    "default": []
+  },
+  "special_box_prices": {
+    "type": "object",
+    "description": "特殊盒按种类定价",
+    "hint": "键为种类ID，值为价格，例如 {\"sp_limited\": 66}",
+    "default": {},
+    "items": {}
+  },
+  "daily_gift_amount": {
+    "type": "int",
+    "description": "每日赠送金额（UTC+8 06:00）",
+    "hint": "每天早上6点自动给已注册用户发放该金额，<=0 表示关闭",
+    "default": 100
+  },
+  "admin_balance_set_enabled": {
+    "type": "bool",
+    "description": "允许管理员设置余额",
+    "hint": "开启后可用 /方舟盲盒 管理员 余额 <user_id> <金额> [group_id]",
+    "default": true
+  }
+}
