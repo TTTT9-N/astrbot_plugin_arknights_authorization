@@ -1,3 +1,5 @@
+"""Inventory persistence helpers for blind-box plugin."""
+
 import sqlite3
 from pathlib import Path
 from typing import List, Tuple

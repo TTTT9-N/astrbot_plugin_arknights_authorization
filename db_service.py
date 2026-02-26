@@ -1,3 +1,5 @@
+"""Database service helpers for blind-box plugin."""
+
 import json
 import sqlite3
 import time
