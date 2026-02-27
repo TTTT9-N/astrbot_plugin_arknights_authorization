@@ -45,6 +45,32 @@ def get_daily_market_multiplier(
     return value
 
 
+def get_daily_market_multiplier_for_item(
+    *,
+    date_str: str,
+    category_id: str,
+    item_id: str,
+    volatility: float,
+    kv_getter: Callable[[str], Optional[str]],
+    kv_setter: Callable[[str, str], None],
+) -> float:
+    key = f"market_multiplier:{date_str}:{category_id}:{item_id}"
+    stored = kv_getter(key)
+    if stored is not None:
+        try:
+            val = float(stored)
+            if val > 0:
+                return val
+        except Exception:
+            pass
+
+    low = max(0.01, 1.0 - volatility)
+    high = 1.0 + volatility
+    value = random.uniform(low, high)
+    kv_setter(key, f"{value:.6f}")
+    return value
+
+
 def calc_scarcity_multiplier(remaining_count: int, total_count: int, scarcity_weight: float) -> float:
     if total_count <= 0:
         return 1.0

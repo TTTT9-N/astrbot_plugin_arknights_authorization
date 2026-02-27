@@ -43,8 +43,9 @@ try:
         calc_scarcity_multiplier,
         clamp_non_negative_float,
         clamp_volatility,
-        get_daily_market_multiplier,
+        get_daily_market_multiplier_for_item,
     )
+    from .resource_index_service import sync_box_index_file
 except ImportError:
     from db_service import (
         db_ensure_category_state,
@@ -78,11 +79,12 @@ except ImportError:
         calc_scarcity_multiplier,
         clamp_non_negative_float,
         clamp_volatility,
-        get_daily_market_multiplier,
+        get_daily_market_multiplier_for_item,
     )
+    from resource_index_service import sync_box_index_file
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.6.1")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.6.2")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -97,6 +99,7 @@ class ArknightsBlindBoxPlugin(Star):
         self.runtime_config_path = self.data_dir / "runtime_config.json"
         self.session_path = self.data_dir / "sessions.json"
         self.db_path = self.data_dir / "blindbox.db"
+        self.resource_index_path = self.data_dir / "resource_box_index.json"
 
         self.resource_dir = self.base_dir / "resources"
         self.number_box_dir = self.resource_dir / "number_box"
@@ -105,6 +108,7 @@ class ArknightsBlindBoxPlugin(Star):
         self.sessions: Dict[str, str] = {}
         self.runtime_config: Dict[str, object] = {}
         self.categories: Dict[str, dict] = {}
+        self.resource_box_index: Dict[str, dict] = {}
 
         self._runtime_config_mtime: float = 0
         self._last_context_sync: float = 0
@@ -182,7 +186,7 @@ class ArknightsBlindBoxPlugin(Star):
                 return
             lines = ["当前库存："]
             for category_id, item_name, count in rows:
-                unit_price, unit_text = self._get_inventory_unit_price(category_id)
+                unit_price, unit_text = self._get_inventory_unit_price(category_id, item_name)
                 total_text = f"{unit_price * count} 元" if unit_price is not None else "待定"
                 lines.append(
                     f"- [{category_id}] {item_name} x{count} | 通行证单价：{unit_text} | 数量总价：{total_text}"
@@ -545,19 +549,22 @@ class ArknightsBlindBoxPlugin(Star):
         if not inventory_rows:
             return [event.plain_result(f"你在种类 {category_id} 下没有可回收库存。")]
 
-        unit_price, detail = self._get_market_price_breakdown(category_id)
-        if unit_price <= 0:
-            return [event.plain_result(f"种类 {category_id} 当前价格待定，暂不可回收。")]
-
         if len(args) == 1:
-            lines = [f"【回收预览】{category_id}", f"当前回收单价：{unit_price} 元", f"定价模型：{detail}", "可回收物品："]
+            lines = [f"【回收预览】{category_id}", "回收价格（按盲盒独立计算）："]
             for item_name, count in inventory_rows:
-                lines.append(f"- {item_name} x{count}")
+                item_id = self._find_item_id_by_name(category_id, item_name)
+                unit_price, _ = self._get_market_price_breakdown(category_id, item_id)
+                lines.append(f"- {item_name} x{count} | 回收单价：{self._format_price_text(unit_price)}")
             lines.append("\n执行：/方舟盲盒 回收 <种类ID> <奖品名> [数量]")
             return [event.plain_result("\n".join(lines))]
 
         item_name = args[1]
         count = int(args[2]) if len(args) > 2 and str(args[2]).isdigit() else 1
+        item_id = self._find_item_id_by_name(category_id, item_name)
+        unit_price, detail = self._get_market_price_breakdown(category_id, item_id)
+        if unit_price <= 0:
+            return [event.plain_result(f"奖品 `{item_name}` 当前回收价格待定，暂不可回收。")]
+
         ok = self._db_consume_inventory_item(group_id, user_id, category_id, item_name, count)
         if not ok:
             return [event.plain_result(f"回收失败：库存不足或未找到奖品 `{item_name}`。")]
@@ -569,6 +576,7 @@ class ArknightsBlindBoxPlugin(Star):
             event.plain_result(
                 f"回收成功：{item_name} x{count}\n"
                 f"回收单价：{unit_price} 元\n"
+                f"定价模型：{detail}\n"
                 f"获得金额：{gain} 元\n"
                 f"当前余额：{balance + gain} 元"
             )
@@ -696,8 +704,9 @@ class ArknightsBlindBoxPlugin(Star):
     def _format_price_text(self, price: int) -> str:
         return f"{price} 元" if price > 0 else "待定"
 
-    def _get_inventory_unit_price(self, category_id: str) -> Tuple[Optional[int], str]:
-        price, _ = self._get_market_price_breakdown(category_id)
+    def _get_inventory_unit_price(self, category_id: str, item_name: str) -> Tuple[Optional[int], str]:
+        item_id = self._find_item_id_by_name(category_id, item_name)
+        price, _ = self._get_market_price_breakdown(category_id, item_id)
         return (price, self._format_price_text(price)) if price > 0 else (None, "待定")
 
     def _get_category_price(self, category_id: str) -> int:
@@ -717,7 +726,22 @@ class ArknightsBlindBoxPlugin(Star):
             return int(special_prices[category_id])
         return int(self.runtime_config.get("special_box_default_price", 0))
 
-    def _get_market_price_breakdown(self, category_id: str) -> Tuple[int, str]:
+    def _find_item_id_by_name(self, category_id: str, item_name: str) -> str:
+        target = str(item_name or "").strip()
+        idx = self.resource_box_index.get(category_id, {})
+        for box in idx.get("boxes", []) if isinstance(idx, dict) else []:
+            if str(box.get("name", "")).strip() == target:
+                return str(box.get("item_id", ""))
+
+        category = self.categories.get(category_id, {})
+        items = category.get("items", {}) if isinstance(category, dict) else {}
+        for item_id, item in items.items():
+            if str(item.get("name", "")).strip() == target:
+                return item_id
+        return ""
+
+
+    def _get_market_price_breakdown(self, category_id: str, item_id: str = "") -> Tuple[int, str]:
         base_price = self._get_category_price(category_id)
         if base_price <= 0:
             return 0, "基准价待定"
@@ -732,9 +756,11 @@ class ArknightsBlindBoxPlugin(Star):
         scarcity_weight = clamp_non_negative_float(self.runtime_config.get("market_scarcity_weight", 0.8))
 
         current_date, _ = self._utc8_date_hour()
-        market_multiplier = get_daily_market_multiplier(
+        item_key = item_id or "_category_default_"
+        market_multiplier = get_daily_market_multiplier_for_item(
             date_str=current_date,
             category_id=category_id,
+            item_id=item_key,
             volatility=volatility,
             kv_getter=self._db_get_kv,
             kv_setter=self._db_set_kv,
@@ -754,21 +780,33 @@ class ArknightsBlindBoxPlugin(Star):
             category = self.categories.get(category_id)
             if not category:
                 return f"不存在种类 `{category_id}`。\n\n{self._build_category_list_text()}"
+
             remain_items, _ = self._db_get_category_state(category_id)
-            price, detail = self._get_market_price_breakdown(category_id)
-            return (
-                f"【市场】{category_id}\n"
-                f"当前价格：{self._format_price_text(price)}\n"
-                f"剩余数量：{len(remain_items)}/{len(category.get('items', {}))}\n"
-                f"定价模型：{detail}"
-            )
+            lines = [
+                f"【市场】{category_id}",
+                f"剩余盲盒数量：{len(remain_items)}/{len(category.get('items', {}))}",
+                "单盒价格（按盲盒独立计算）：",
+            ]
+            for item_id, item in sorted(category.get("items", {}).items(), key=lambda x: (x[1].get("slot_no", 0), x[0])):
+                price, detail = self._get_market_price_breakdown(category_id, item_id)
+                sold_text = "（已开出）" if item_id not in remain_items else ""
+                lines.append(
+                    f"- #{item.get('slot_no', 0)} {item.get('name', item_id)}：{self._format_price_text(price)} {sold_text}"
+                )
+                lines.append(f"  · {detail}")
+            return "\n".join(lines)
 
         lines = ["【市场总览】"]
         for cid, category in self.categories.items():
             remain_items, _ = self._db_get_category_state(cid)
-            price, _ = self._get_market_price_breakdown(cid)
+            price_list = [self._get_market_price_breakdown(cid, item_id)[0] for item_id in category.get("items", {}).keys()]
+            valid = [p for p in price_list if p > 0]
+            if valid:
+                price_text = f"{min(valid)}~{max(valid)} 元"
+            else:
+                price_text = "待定"
             lines.append(
-                f"- {cid}（类型: {category['box_type']}，价格: {self._format_price_text(price)}，"
+                f"- {cid}（类型: {category['box_type']}，单盒价格区间: {price_text}，"
                 f"剩余: {len(remain_items)}/{len(category.get('items', {}))}）"
             )
         lines.append("\n查看详情：/方舟盲盒 市场 <种类ID>")
@@ -836,6 +874,7 @@ class ArknightsBlindBoxPlugin(Star):
         self.categories = scanned
         for category_id, category in scanned.items():
             self._db_ensure_category_state(category_id, category)
+        self.resource_box_index = sync_box_index_file(self.resource_index_path, self.categories)
 
     def _scan_categories(self) -> Dict[str, dict]:
         return scan_categories(self.number_box_dir, self.special_box_dir, self.GUIDE_CANDIDATES)
