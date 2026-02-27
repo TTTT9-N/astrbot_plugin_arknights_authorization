@@ -1,6 +1,7 @@
 import asyncio
 import json
 import random
+import re
 import shutil
 import sys
 import time
@@ -25,9 +26,7 @@ try:
         db_update_balance,
         init_db,
     )
-    from .resource_service import (
-        scan_categories,
-    )
+    from . import resource_service as resource_service_module
     from .time_service import utc8_date_hour
     from .inventory_service import (
         add_inventory_item,
@@ -61,9 +60,10 @@ except Exception:
         db_update_balance,
         init_db,
     )
-    from resource_service import (
-        scan_categories,
-    )
+    try:
+        import resource_service as resource_service_module
+    except Exception:
+        resource_service_module = None
     from time_service import utc8_date_hour
     from inventory_service import (
         add_inventory_item,
@@ -82,7 +82,7 @@ except Exception:
     from resource_index_service import sync_box_index_file
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.6.4")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.6.5")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -875,7 +875,66 @@ class ArknightsBlindBoxPlugin(Star):
         self.resource_box_index = sync_box_index_file(self.resource_index_path, self.categories)
 
     def _scan_categories(self) -> Dict[str, dict]:
-        return scan_categories(self.number_box_dir, self.special_box_dir, self.GUIDE_CANDIDATES)
+        scanner = getattr(resource_service_module, "scan_categories", None)
+        if callable(scanner):
+            return scanner(self.number_box_dir, self.special_box_dir, self.GUIDE_CANDIDATES)
+        return self._scan_categories_fallback()
+
+    def _scan_categories_fallback(self) -> Dict[str, dict]:
+        result: Dict[str, dict] = {}
+        for box_type, root in (("number", self.number_box_dir), ("special", self.special_box_dir)):
+            if not root.exists():
+                continue
+            for cat_dir in root.iterdir():
+                if not cat_dir.is_dir():
+                    continue
+                category_id = cat_dir.name
+                items, slots = self._parse_prize_items_fallback(cat_dir)
+                if not items or not slots:
+                    continue
+                guide = self._find_guide_image_fallback(cat_dir)
+                result[category_id] = {
+                    "id": category_id,
+                    "box_type": box_type,
+                    "guide_image": guide,
+                    "items": items,
+                    "slot_total": len(slots),
+                    "slots": sorted(slots),
+                    "signature": self._build_category_signature_fallback(list(items.keys()), slots),
+                }
+        return result
+
+    def _find_guide_image_fallback(self, cat_dir: Path) -> Optional[Path]:
+        for name in self.GUIDE_CANDIDATES:
+            p = cat_dir / name
+            if p.exists():
+                return p
+        return None
+
+    def _parse_prize_items_fallback(self, cat_dir: Path) -> Tuple[Dict[str, dict], List[int]]:
+        slots: List[int] = []
+        items: Dict[str, dict] = {}
+        pattern = re.compile(r"^(\d+)[-_](.+)$")
+        for f in sorted(cat_dir.iterdir()):
+            if not f.is_file():
+                continue
+            if f.name in self.GUIDE_CANDIDATES:
+                continue
+            if f.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+                continue
+            m = pattern.match(f.stem)
+            if not m:
+                continue
+            slot_no = int(m.group(1))
+            display_name = m.group(2).strip() or f.stem
+            item_id = f.name
+            items[item_id] = {"name": display_name, "image": f, "slot_no": slot_no}
+            if slot_no not in slots:
+                slots.append(slot_no)
+        return items, sorted(slots)
+
+    def _build_category_signature_fallback(self, item_ids: List[str], slots: List[int]) -> str:
+        return "|".join(sorted(item_ids)) + "::" + ",".join(map(str, sorted(slots)))
 
     def _ensure_default_runtime_config(self):
         if self.runtime_config_path.exists():
