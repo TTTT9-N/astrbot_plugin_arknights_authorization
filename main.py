@@ -2,6 +2,7 @@ import asyncio
 import json
 import random
 import shutil
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -43,7 +44,10 @@ try:
         get_daily_market_multiplier_for_item,
     )
     from .resource_index_service import sync_box_index_file
-except ImportError:
+except Exception:
+    plugin_dir = str(Path(__file__).resolve().parent)
+    if plugin_dir not in sys.path:
+        sys.path.insert(0, plugin_dir)
     from db_service import (
         db_ensure_category_state,
         db_get_balance,
@@ -78,7 +82,7 @@ except ImportError:
     from resource_index_service import sync_box_index_file
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.6.3")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.6.4")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
