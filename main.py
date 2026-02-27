@@ -56,7 +56,7 @@ except ImportError:
     from inventory_service import add_inventory_item, get_user_inventory, init_inventory_table
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.8")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.5")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -110,9 +110,6 @@ class ArknightsBlindBoxPlugin(Star):
             return
 
         action = args[0].lower()
-
-        if self._is_blacklisted(event):
-            return
 
         if action in {"注册", "signup", "reg"}:
             identity = self._get_identity(event)
@@ -335,7 +332,7 @@ class ArknightsBlindBoxPlugin(Star):
 
     def _handle_admin_command(self, event: AstrMessageEvent, args: List[str]):
         if not args:
-            return [event.plain_result("管理员指令：\n- 管理员 列表|添加|移除 <user_id>\n- 特殊定价 <种类ID> <金额>\n- 余额 <user_id> <金额> [group_id]\n- 黑名单 列表|添加|移除 <user_id>")]
+            return [event.plain_result("管理员指令：列表/添加 <user_id>/移除 <user_id>/特殊定价 <种类ID> <金额>/余额 <user_id> <金额> [group_id]")]
 
         identity = self._get_identity(event)
         if identity is None:
@@ -407,34 +404,6 @@ class ArknightsBlindBoxPlugin(Star):
             self._db_update_balance(target_group_id, target_user_id, int(amount))
             return [event.plain_result(f"已设置余额：群 {target_group_id} 用户 {target_user_id} = {amount} 元")]
 
-        if action == "黑名单":
-            if current_user_id not in admins:
-                return [event.plain_result("仅管理员可管理黑名单。")]
-            if len(args) < 2:
-                return [event.plain_result("用法：/方舟盲盒 管理员 黑名单 列表|添加 <user_id>|移除 <user_id>")]
-            sub_action = {"list": "列表", "add": "添加", "remove": "移除"}.get(args[1], args[1])
-            blacklist = self._get_blacklist_user_ids()
-            if sub_action == "列表":
-                return [event.plain_result(f"黑名单列表：{', '.join(blacklist) if blacklist else '暂无'}")]
-            if len(args) < 3:
-                return [event.plain_result("用法：/方舟盲盒 管理员 黑名单 添加 <user_id> 或 /方舟盲盒 管理员 黑名单 移除 <user_id>")]
-            target = self._parse_user_id_input(args[2])
-            if not target:
-                return [event.plain_result("无法识别用户ID，请直接填写数字ID。")]
-            if sub_action == "添加":
-                if target not in blacklist:
-                    blacklist.append(target)
-                    self.runtime_config["blacklist_user_ids"] = blacklist
-                    self._save_json(self.runtime_config_path, self.runtime_config)
-                return [event.plain_result(f"已加入黑名单：{target}")]
-            if sub_action == "移除":
-                if target in blacklist:
-                    blacklist.remove(target)
-                    self.runtime_config["blacklist_user_ids"] = blacklist
-                    self._save_json(self.runtime_config_path, self.runtime_config)
-                return [event.plain_result(f"已移出黑名单：{target}")]
-            return [event.plain_result("未知黑名单指令。")]
-
         return [event.plain_result("未知管理员指令。")]
 
 
@@ -458,7 +427,7 @@ class ArknightsBlindBoxPlugin(Star):
             "7) /方舟盲盒 状态 [种类ID]\n"
             "8) /方舟盲盒 刷新 [种类ID]\n"
             "9) /方舟盲盒 重载资源\n"
-            "10) /方舟盲盒 管理员 <列表|添加|移除|特殊定价|余额|黑名单> ..."
+            "10) /方舟盲盒 管理员 ...（含余额设置）"
         )
 
     def _build_category_list_text(self) -> str:
