@@ -2,6 +2,7 @@ import asyncio
 import json
 import random
 import shutil
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -25,9 +26,6 @@ try:
         init_db,
     )
     from .resource_service import (
-        build_category_signature,
-        find_guide_image,
-        parse_prize_items,
         scan_categories,
     )
     from .time_service import utc8_date_hour
@@ -46,7 +44,10 @@ try:
         get_daily_market_multiplier_for_item,
     )
     from .resource_index_service import sync_box_index_file
-except ImportError:
+except Exception:
+    plugin_dir = str(Path(__file__).resolve().parent)
+    if plugin_dir not in sys.path:
+        sys.path.insert(0, plugin_dir)
     from db_service import (
         db_ensure_category_state,
         db_get_balance,
@@ -61,9 +62,6 @@ except ImportError:
         init_db,
     )
     from resource_service import (
-        build_category_signature,
-        find_guide_image,
-        parse_prize_items,
         scan_categories,
     )
     from time_service import utc8_date_hour
@@ -84,7 +82,7 @@ except ImportError:
     from resource_index_service import sync_box_index_file
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.6.2")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.6.4")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -878,15 +876,6 @@ class ArknightsBlindBoxPlugin(Star):
 
     def _scan_categories(self) -> Dict[str, dict]:
         return scan_categories(self.number_box_dir, self.special_box_dir, self.GUIDE_CANDIDATES)
-
-    def _find_guide_image(self, cat_dir: Path) -> Optional[Path]:
-        return find_guide_image(cat_dir, self.GUIDE_CANDIDATES)
-
-    def _parse_prize_items(self, cat_dir: Path) -> Tuple[Dict[str, dict], List[int]]:
-        return parse_prize_items(cat_dir, self.GUIDE_CANDIDATES)
-
-    def _build_category_signature(self, item_ids: List[str], slots: List[int]) -> str:
-        return build_category_signature(item_ids, slots)
 
     def _ensure_default_runtime_config(self):
         if self.runtime_config_path.exists():
