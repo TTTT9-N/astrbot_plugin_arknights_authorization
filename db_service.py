@@ -40,6 +40,23 @@ def init_db(db_path: Path):
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS market_listing (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id TEXT NOT NULL,
+                category_id TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                item_name TEXT NOT NULL,
+                price INTEGER NOT NULL,
+                quantity INTEGER NOT NULL,
+                seller_user_id TEXT NOT NULL,
+                is_system INTEGER NOT NULL,
+                day_key TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+            """
+        )
         conn.commit()
     finally:
         conn.close()
@@ -155,5 +172,118 @@ def db_grant_daily_gift(db_path: Path, amount: int) -> int:
         cur = conn.execute("UPDATE user_wallet SET balance = balance + ?", (int(amount),))
         conn.commit()
         return int(cur.rowcount or 0)
+    finally:
+        conn.close()
+
+
+def db_add_market_listing(
+    db_path: Path,
+    group_id: str,
+    category_id: str,
+    item_id: str,
+    item_name: str,
+    price: int,
+    quantity: int,
+    seller_user_id: str,
+    is_system: int,
+    day_key: str,
+):
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO market_listing(
+                group_id,category_id,item_id,item_name,price,quantity,seller_user_id,is_system,day_key,created_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                group_id,
+                category_id,
+                item_id,
+                item_name,
+                int(price),
+                int(quantity),
+                seller_user_id,
+                int(is_system),
+                day_key,
+                int(time.time()),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def db_list_market_listings(db_path: Path, group_id: str, category_id: str = "") -> List[dict]:
+    conn = sqlite3.connect(db_path)
+    try:
+        if category_id:
+            cur = conn.execute(
+                """
+                SELECT id,group_id,category_id,item_id,item_name,price,quantity,seller_user_id,is_system,day_key
+                FROM market_listing WHERE group_id=? AND category_id=? AND quantity>0
+                ORDER BY is_system DESC, price ASC, id ASC
+                """,
+                (group_id, category_id),
+            )
+        else:
+            cur = conn.execute(
+                """
+                SELECT id,group_id,category_id,item_id,item_name,price,quantity,seller_user_id,is_system,day_key
+                FROM market_listing WHERE group_id=? AND quantity>0
+                ORDER BY category_id, is_system DESC, price ASC, id ASC
+                """,
+                (group_id,),
+            )
+        rows = cur.fetchall()
+        return [
+            {
+                "id": int(r[0]),
+                "group_id": str(r[1]),
+                "category_id": str(r[2]),
+                "item_id": str(r[3]),
+                "item_name": str(r[4]),
+                "price": int(r[5]),
+                "quantity": int(r[6]),
+                "seller_user_id": str(r[7]),
+                "is_system": int(r[8]),
+                "day_key": str(r[9]),
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def db_consume_market_listing(db_path: Path, listing_id: int, quantity: int) -> bool:
+    need = max(1, int(quantity))
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.execute("SELECT quantity FROM market_listing WHERE id=?", (int(listing_id),))
+        row = cur.fetchone()
+        if not row:
+            return False
+        have = int(row[0])
+        if have < need:
+            return False
+        remain = have - need
+        if remain > 0:
+            conn.execute("UPDATE market_listing SET quantity=? WHERE id=?", (remain, int(listing_id)))
+        else:
+            conn.execute("DELETE FROM market_listing WHERE id=?", (int(listing_id),))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def db_delete_expired_system_listings(db_path: Path, group_id: str, day_key: str):
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "DELETE FROM market_listing WHERE group_id=? AND is_system=1 AND day_key<>?",
+            (group_id, day_key),
+        )
+        conn.commit()
     finally:
         conn.close()

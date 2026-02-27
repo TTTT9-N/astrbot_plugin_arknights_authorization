@@ -14,10 +14,14 @@ from astrbot.api.star import Context, Star, register
 
 try:
     from .db_service import (
+        db_add_market_listing,
+        db_consume_market_listing,
+        db_delete_expired_system_listings,
         db_ensure_category_state,
         db_get_balance,
         db_get_category_state,
         db_get_kv,
+        db_list_market_listings,
         db_get_user,
         db_grant_daily_gift,
         db_register_user,
@@ -48,10 +52,14 @@ except Exception:
     if plugin_dir not in sys.path:
         sys.path.insert(0, plugin_dir)
     from db_service import (
+        db_add_market_listing,
+        db_consume_market_listing,
+        db_delete_expired_system_listings,
         db_ensure_category_state,
         db_get_balance,
         db_get_category_state,
         db_get_kv,
+        db_list_market_listings,
         db_get_user,
         db_grant_daily_gift,
         db_register_user,
@@ -82,7 +90,7 @@ except Exception:
     from resource_index_service import sync_box_index_file
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.6.5")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.7.0")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -184,7 +192,7 @@ class ArknightsBlindBoxPlugin(Star):
                 return
             lines = ["当前库存："]
             for category_id, item_name, count in rows:
-                unit_price, unit_text = self._get_inventory_unit_price(category_id, item_name)
+                unit_price, unit_text = self._get_inventory_unit_price(group_id, category_id, item_name)
                 total_text = f"{unit_price * count} 元" if unit_price is not None else "待定"
                 lines.append(
                     f"- [{category_id}] {item_name} x{count} | 通行证单价：{unit_text} | 数量总价：{total_text}"
@@ -194,20 +202,15 @@ class ArknightsBlindBoxPlugin(Star):
             return
 
         if action in {"市场", "market", "行情"}:
-            target_id = args[1] if len(args) > 1 else ""
-            yield event.plain_result(self._build_market_text(target_id))
-            return
-
-        if action in {"回收", "recycle"}:
             identity = self._get_identity(event)
             if identity is None:
-                yield event.plain_result("无法识别你的账号ID，暂时无法进行回收操作。")
+                yield event.plain_result("无法识别你的账号ID，暂时无法查看市场。")
                 return
             group_id, user_id = identity
             if self._db_get_user(group_id, user_id) is None:
                 yield event.plain_result("你还未注册，请先发送：/方舟盲盒 注册")
                 return
-            for r in self._handle_recycle_command(event, group_id, user_id, args[1:]):
+            for r in self._handle_market_command(event, group_id, user_id, args[1:]):
                 yield r
             return
 
@@ -510,13 +513,14 @@ class ArknightsBlindBoxPlugin(Star):
             "3) /方舟盲盒 库存\n"
             "4) /方舟盲盒 列表\n"
             "5) /方舟盲盒 市场 [种类ID]\n"
-            "6) /方舟盲盒 回收 [种类ID] [奖品名] [数量]\n"
-            "7) /方舟盲盒 选择 <种类ID>\n"
-            "8) /方舟盲盒 开 <序号>\n"
-            "9) /方舟盲盒 状态 [种类ID]\n"
-            "10) /方舟盲盒 刷新 [种类ID]\n"
-            "11) /方舟盲盒 重载资源\n"
-            "12) /方舟盲盒 管理员 <列表|添加|移除|特殊定价|余额|黑名单> ..."
+            "6) /方舟盲盒 市场 上架 <种类ID> <奖品名> <价格> [数量]\n"
+            "7) /方舟盲盒 市场 购买 <种类ID> <奖品名> [数量]\n"
+            "8) /方舟盲盒 选择 <种类ID>\n"
+            "9) /方舟盲盒 开 <序号>\n"
+            "10) /方舟盲盒 状态 [种类ID]\n"
+            "11) /方舟盲盒 刷新 [种类ID]\n"
+            "12) /方舟盲盒 重载资源\n"
+            "13) /方舟盲盒 管理员 <列表|添加|移除|特殊定价|余额|黑名单> ..."
         )
 
     def _build_category_list_text(self) -> str:
@@ -532,53 +536,77 @@ class ArknightsBlindBoxPlugin(Star):
         lines.append("\n使用：/方舟盲盒 选择 <种类ID>")
         return "\n".join(lines)
 
-    def _handle_recycle_command(self, event: AstrMessageEvent, group_id: str, user_id: str, args: List[str]):
+    def _handle_market_command(self, event: AstrMessageEvent, group_id: str, user_id: str, args: List[str]):
+        self._refresh_system_market(group_id)
+
         if not args:
-            return [
-                event.plain_result(
-                    "回收用法：\n"
-                    "1) /方舟盲盒 回收 <种类ID>（查看该类可回收物品和单价）\n"
-                    "2) /方舟盲盒 回收 <种类ID> <奖品名> [数量]（执行回收）"
-                )
-            ]
+            return [event.plain_result(self._build_market_text("", group_id))]
+
+        action = str(args[0]).strip().lower()
+        alias = {"list": "列表", "sell": "上架", "buy": "购买"}
+        action = alias.get(action, action)
+
+        if action == "上架":
+            if len(args) < 4:
+                return [event.plain_result("用法：/方舟盲盒 市场 上架 <种类ID> <奖品名> <价格> [数量]")]
+            category_id = args[1]
+            item_name = args[2]
+            if not str(args[3]).isdigit():
+                return [event.plain_result("价格必须是正整数。")]
+            price = int(args[3])
+            quantity = int(args[4]) if len(args) > 4 and str(args[4]).isdigit() else 1
+            if price <= 0 or quantity <= 0:
+                return [event.plain_result("价格和数量必须大于 0。")]
+
+            item_id = self._find_item_id_by_name(category_id, item_name)
+            if not item_id:
+                return [event.plain_result(f"种类 {category_id} 中不存在奖品 `{item_name}`。")]
+
+            if not self._db_consume_inventory_item(group_id, user_id, category_id, item_name, quantity):
+                return [event.plain_result(f"上架失败：库存不足（{item_name}）。")]
+
+            self._db_add_market_listing(
+                group_id,
+                category_id,
+                item_id,
+                item_name,
+                price,
+                quantity,
+                user_id,
+                is_system=0,
+                day_key="",
+            )
+            return [event.plain_result(f"上架成功：[{category_id}] {item_name} x{quantity}，售价 {price} 元/个")]
+
+        if action == "购买":
+            if len(args) < 3:
+                return [event.plain_result("用法：/方舟盲盒 市场 购买 <种类ID> <奖品名> [数量]")]
+            category_id = args[1]
+            item_name = args[2]
+            quantity = int(args[3]) if len(args) > 3 and str(args[3]).isdigit() else 1
+            if quantity <= 0:
+                return [event.plain_result("购买数量必须大于 0。")]
+
+            listing = self._pick_listing_for_buy(group_id, category_id, item_name)
+            if not listing:
+                return [event.plain_result(f"当前市场没有可购买的 [{category_id}] {item_name}。")]
+            if listing["quantity"] < quantity:
+                return [event.plain_result(f"库存不足，当前可购买：{listing['quantity']}。")]
+
+            total_price = int(listing["price"]) * quantity
+            balance = self._db_get_balance(group_id, user_id) or 0
+            if balance < total_price:
+                return [event.plain_result(f"余额不足，需 {total_price} 元，当前余额 {balance} 元。")]
+
+            if not self._db_consume_market_listing(int(listing["id"]), quantity):
+                return [event.plain_result("购买失败：商品已被抢完，请重试。")]
+
+            self._db_update_balance(group_id, user_id, balance - total_price)
+            self._db_add_inventory_item(group_id, user_id, category_id, item_name, quantity)
+            return [event.plain_result(f"购买成功：{item_name} x{quantity}，花费 {total_price} 元，当前余额 {balance-total_price} 元")]
 
         category_id = args[0]
-        inventory_rows = self._db_get_user_inventory_by_category(group_id, user_id, category_id)
-        if not inventory_rows:
-            return [event.plain_result(f"你在种类 {category_id} 下没有可回收库存。")]
-
-        if len(args) == 1:
-            lines = [f"【回收预览】{category_id}", "回收价格（按盲盒独立计算）："]
-            for item_name, count in inventory_rows:
-                item_id = self._find_item_id_by_name(category_id, item_name)
-                unit_price, _ = self._get_market_price_breakdown(category_id, item_id)
-                lines.append(f"- {item_name} x{count} | 回收单价：{self._format_price_text(unit_price)}")
-            lines.append("\n执行：/方舟盲盒 回收 <种类ID> <奖品名> [数量]")
-            return [event.plain_result("\n".join(lines))]
-
-        item_name = args[1]
-        count = int(args[2]) if len(args) > 2 and str(args[2]).isdigit() else 1
-        item_id = self._find_item_id_by_name(category_id, item_name)
-        unit_price, detail = self._get_market_price_breakdown(category_id, item_id)
-        if unit_price <= 0:
-            return [event.plain_result(f"奖品 `{item_name}` 当前回收价格待定，暂不可回收。")]
-
-        ok = self._db_consume_inventory_item(group_id, user_id, category_id, item_name, count)
-        if not ok:
-            return [event.plain_result(f"回收失败：库存不足或未找到奖品 `{item_name}`。")]
-
-        balance = self._db_get_balance(group_id, user_id) or 0
-        gain = unit_price * count
-        self._db_update_balance(group_id, user_id, balance + gain)
-        return [
-            event.plain_result(
-                f"回收成功：{item_name} x{count}\n"
-                f"回收单价：{unit_price} 元\n"
-                f"定价模型：{detail}\n"
-                f"获得金额：{gain} 元\n"
-                f"当前余额：{balance + gain} 元"
-            )
-        ]
+        return [event.plain_result(self._build_market_text(category_id, group_id))]
 
     def _build_session_key(self, event: AstrMessageEvent) -> str:
         identity = self._get_identity(event)
@@ -702,9 +730,9 @@ class ArknightsBlindBoxPlugin(Star):
     def _format_price_text(self, price: int) -> str:
         return f"{price} 元" if price > 0 else "待定"
 
-    def _get_inventory_unit_price(self, category_id: str, item_name: str) -> Tuple[Optional[int], str]:
+    def _get_inventory_unit_price(self, group_id: str, category_id: str, item_name: str) -> Tuple[Optional[int], str]:
         item_id = self._find_item_id_by_name(category_id, item_name)
-        price, _ = self._get_market_price_breakdown(category_id, item_id)
+        price, _ = self._get_market_price_breakdown(group_id, category_id, item_id)
         return (price, self._format_price_text(price)) if price > 0 else (None, "待定")
 
     def _get_category_price(self, category_id: str) -> int:
@@ -739,7 +767,7 @@ class ArknightsBlindBoxPlugin(Star):
         return ""
 
 
-    def _get_market_price_breakdown(self, category_id: str, item_id: str = "") -> Tuple[int, str]:
+    def _get_market_price_breakdown(self, group_id: str, category_id: str, item_id: str = "") -> Tuple[int, str]:
         base_price = self._get_category_price(category_id)
         if base_price <= 0:
             return 0, "基准价待定"
@@ -764,13 +792,22 @@ class ArknightsBlindBoxPlugin(Star):
             kv_setter=self._db_set_kv,
         )
         scarcity_multiplier = calc_scarcity_multiplier(len(remain_items), total_items, scarcity_weight)
-        return build_market_breakdown(
+        price, detail = build_market_breakdown(
             base_price=base_price,
             market_multiplier=market_multiplier,
             scarcity_multiplier=scarcity_multiplier,
         )
+        user_prices = [
+            int(x["price"]) for x in self._db_list_market_listings(group_id, category_id)
+            if int(x.get("is_system", 0)) == 0 and (not item_id or str(x.get("item_id")) == item_id)
+        ]
+        if user_prices:
+            avg_user = sum(user_prices) / len(user_prices)
+            price = max(1, int(round((price * 0.7) + (avg_user * 0.3))))
+            detail = f"{detail}；用户上架均价影响后={price}"
+        return price, detail
 
-    def _build_market_text(self, category_id: str = "") -> str:
+    def _build_market_text(self, category_id: str = "", group_id: str = "") -> str:
         if not self.categories:
             return "当前未发现盲盒资源。请先在 resources/number_box 或 resources/special_box 下放入资源。"
 
@@ -786,18 +823,24 @@ class ArknightsBlindBoxPlugin(Star):
                 "单盒价格（按盲盒独立计算）：",
             ]
             for item_id, item in sorted(category.get("items", {}).items(), key=lambda x: (x[1].get("slot_no", 0), x[0])):
-                price, detail = self._get_market_price_breakdown(category_id, item_id)
+                price, detail = self._get_market_price_breakdown(group_id, category_id, item_id)
                 sold_text = "（已开出）" if item_id not in remain_items else ""
                 lines.append(
                     f"- #{item.get('slot_no', 0)} {item.get('name', item_id)}：{self._format_price_text(price)} {sold_text}"
                 )
                 lines.append(f"  · {detail}")
+            listings = self._db_list_market_listings(group_id, category_id)
+            if listings:
+                lines.append("\n当前在售：")
+                for row in listings:
+                    seller = "系统" if int(row.get("is_system", 0)) == 1 else f"用户{row.get('seller_user_id')}"
+                    lines.append(f"- {row['item_name']} x{row['quantity']} | {row['price']} 元 | 来源：{seller}")
             return "\n".join(lines)
 
         lines = ["【市场总览】"]
         for cid, category in self.categories.items():
             remain_items, _ = self._db_get_category_state(cid)
-            price_list = [self._get_market_price_breakdown(cid, item_id)[0] for item_id in category.get("items", {}).keys()]
+            price_list = [self._get_market_price_breakdown(group_id, cid, item_id)[0] for item_id in category.get("items", {}).keys()]
             valid = [p for p in price_list if p > 0]
             if valid:
                 price_text = f"{min(valid)}~{max(valid)} 元"
@@ -807,8 +850,53 @@ class ArknightsBlindBoxPlugin(Star):
                 f"- {cid}（类型: {category['box_type']}，单盒价格区间: {price_text}，"
                 f"剩余: {len(remain_items)}/{len(category.get('items', {}))}）"
             )
+        system_cnt = len([x for x in self._db_list_market_listings(group_id) if int(x.get("is_system", 0)) == 1])
+        lines.append(f"\n系统在售数量：{system_cnt}（每天 0 点刷新，最多 3 种）")
         lines.append("\n查看详情：/方舟盲盒 市场 <种类ID>")
+        lines.append("上架：/方舟盲盒 市场 上架 <种类ID> <奖品名> <价格> [数量]")
+        lines.append("购买：/方舟盲盒 市场 购买 <种类ID> <奖品名> [数量]")
         return "\n".join(lines)
+
+    def _pick_listing_for_buy(self, group_id: str, category_id: str, item_name: str) -> Optional[dict]:
+        rows = self._db_list_market_listings(group_id, category_id)
+        target = str(item_name).strip()
+        for row in rows:
+            if str(row.get("item_name", "")).strip() == target and int(row.get("quantity", 0)) > 0:
+                return row
+        return None
+
+    def _refresh_system_market(self, group_id: str):
+        date_key, _ = self._utc8_date_hour()
+        self._db_delete_expired_system_listings(group_id, date_key)
+
+        existing = [x for x in self._db_list_market_listings(group_id) if int(x.get("is_system", 0)) == 1 and x.get("day_key") == date_key]
+        if existing:
+            return
+
+        all_items = []
+        for category_id, category in self.categories.items():
+            remain_items, _ = self._db_get_category_state(category_id)
+            for item_id in remain_items:
+                item = category.get("items", {}).get(item_id)
+                if item:
+                    all_items.append((category_id, item_id, str(item.get("name", item_id))))
+
+        random.shuffle(all_items)
+        for category_id, item_id, item_name in all_items[:3]:
+            price, _ = self._get_market_price_breakdown(group_id, category_id, item_id)
+            if price <= 0:
+                continue
+            self._db_add_market_listing(
+                group_id,
+                category_id,
+                item_id,
+                item_name,
+                price,
+                1,
+                "system",
+                is_system=1,
+                day_key=date_key,
+            )
 
     def _build_results_with_optional_image(self, event: AstrMessageEvent, text: str, image: Optional[Path]):
         image_str = str(image) if image else ""
@@ -1055,6 +1143,40 @@ class ArknightsBlindBoxPlugin(Star):
 
     def _db_grant_daily_gift(self, amount: int) -> int:
         return db_grant_daily_gift(self.db_path, amount)
+
+    def _db_add_market_listing(
+        self,
+        group_id: str,
+        category_id: str,
+        item_id: str,
+        item_name: str,
+        price: int,
+        quantity: int,
+        seller_user_id: str,
+        is_system: int,
+        day_key: str,
+    ):
+        db_add_market_listing(
+            self.db_path,
+            group_id,
+            category_id,
+            item_id,
+            item_name,
+            price,
+            quantity,
+            seller_user_id,
+            is_system,
+            day_key,
+        )
+
+    def _db_list_market_listings(self, group_id: str, category_id: str = "") -> List[dict]:
+        return db_list_market_listings(self.db_path, group_id, category_id)
+
+    def _db_consume_market_listing(self, listing_id: int, quantity: int) -> bool:
+        return db_consume_market_listing(self.db_path, listing_id, quantity)
+
+    def _db_delete_expired_system_listings(self, group_id: str, day_key: str):
+        db_delete_expired_system_listings(self.db_path, group_id, day_key)
 
     def _get_open_cooldown_seconds(self) -> int:
         value = int(self.runtime_config.get("open_cooldown_seconds", 10))
