@@ -31,7 +31,13 @@ try:
         scan_categories,
     )
     from .time_service import utc8_date_hour
-    from .inventory_service import add_inventory_item, get_user_inventory, init_inventory_table
+    from .inventory_service import (
+        add_inventory_item,
+        consume_inventory_item,
+        get_user_inventory,
+        get_user_inventory_by_category,
+        init_inventory_table,
+    )
     from .market_service import (
         build_market_breakdown,
         calc_scarcity_multiplier,
@@ -60,7 +66,13 @@ except ImportError:
         scan_categories,
     )
     from time_service import utc8_date_hour
-    from inventory_service import add_inventory_item, get_user_inventory, init_inventory_table
+    from inventory_service import (
+        add_inventory_item,
+        consume_inventory_item,
+        get_user_inventory,
+        get_user_inventory_by_category,
+        init_inventory_table,
+    )
     from market_service import (
         build_market_breakdown,
         calc_scarcity_multiplier,
@@ -70,7 +82,7 @@ except ImportError:
     )
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.6.0")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.6.1")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -179,9 +191,22 @@ class ArknightsBlindBoxPlugin(Star):
             yield event.plain_result("\n".join(lines))
             return
 
-        if action in {"市场", "market"}:
+        if action in {"市场", "market", "行情"}:
             target_id = args[1] if len(args) > 1 else ""
             yield event.plain_result(self._build_market_text(target_id))
+            return
+
+        if action in {"回收", "recycle"}:
+            identity = self._get_identity(event)
+            if identity is None:
+                yield event.plain_result("无法识别你的账号ID，暂时无法进行回收操作。")
+                return
+            group_id, user_id = identity
+            if self._db_get_user(group_id, user_id) is None:
+                yield event.plain_result("你还未注册，请先发送：/方舟盲盒 注册")
+                return
+            for r in self._handle_recycle_command(event, group_id, user_id, args[1:]):
+                yield r
             return
 
         if action in {"列表", "list", "types"}:
@@ -468,6 +493,9 @@ class ArknightsBlindBoxPlugin(Star):
         text = (raw_message or "").strip()
         if not text:
             return []
+        if text.startswith("/方舟盲盒市场"):
+            remain = text.replace("/方舟盲盒市场", "", 1).strip()
+            return ["市场"] + ([p for p in remain.split() if p] if remain else [])
         parts = [p for p in text.split() if p]
         first = parts[0].lstrip("/") if parts else ""
         return parts[1:] if first == "方舟盲盒" else parts
@@ -480,12 +508,13 @@ class ArknightsBlindBoxPlugin(Star):
             "3) /方舟盲盒 库存\n"
             "4) /方舟盲盒 列表\n"
             "5) /方舟盲盒 市场 [种类ID]\n"
-            "6) /方舟盲盒 选择 <种类ID>\n"
-            "7) /方舟盲盒 开 <序号>\n"
-            "8) /方舟盲盒 状态 [种类ID]\n"
-            "9) /方舟盲盒 刷新 [种类ID]\n"
-            "10) /方舟盲盒 重载资源\n"
-            "11) /方舟盲盒 管理员 <列表|添加|移除|特殊定价|余额|黑名单> ..."
+            "6) /方舟盲盒 回收 [种类ID] [奖品名] [数量]\n"
+            "7) /方舟盲盒 选择 <种类ID>\n"
+            "8) /方舟盲盒 开 <序号>\n"
+            "9) /方舟盲盒 状态 [种类ID]\n"
+            "10) /方舟盲盒 刷新 [种类ID]\n"
+            "11) /方舟盲盒 重载资源\n"
+            "12) /方舟盲盒 管理员 <列表|添加|移除|特殊定价|余额|黑名单> ..."
         )
 
     def _build_category_list_text(self) -> str:
@@ -500,6 +529,50 @@ class ArknightsBlindBoxPlugin(Star):
             )
         lines.append("\n使用：/方舟盲盒 选择 <种类ID>")
         return "\n".join(lines)
+
+    def _handle_recycle_command(self, event: AstrMessageEvent, group_id: str, user_id: str, args: List[str]):
+        if not args:
+            return [
+                event.plain_result(
+                    "回收用法：\n"
+                    "1) /方舟盲盒 回收 <种类ID>（查看该类可回收物品和单价）\n"
+                    "2) /方舟盲盒 回收 <种类ID> <奖品名> [数量]（执行回收）"
+                )
+            ]
+
+        category_id = args[0]
+        inventory_rows = self._db_get_user_inventory_by_category(group_id, user_id, category_id)
+        if not inventory_rows:
+            return [event.plain_result(f"你在种类 {category_id} 下没有可回收库存。")]
+
+        unit_price, detail = self._get_market_price_breakdown(category_id)
+        if unit_price <= 0:
+            return [event.plain_result(f"种类 {category_id} 当前价格待定，暂不可回收。")]
+
+        if len(args) == 1:
+            lines = [f"【回收预览】{category_id}", f"当前回收单价：{unit_price} 元", f"定价模型：{detail}", "可回收物品："]
+            for item_name, count in inventory_rows:
+                lines.append(f"- {item_name} x{count}")
+            lines.append("\n执行：/方舟盲盒 回收 <种类ID> <奖品名> [数量]")
+            return [event.plain_result("\n".join(lines))]
+
+        item_name = args[1]
+        count = int(args[2]) if len(args) > 2 and str(args[2]).isdigit() else 1
+        ok = self._db_consume_inventory_item(group_id, user_id, category_id, item_name, count)
+        if not ok:
+            return [event.plain_result(f"回收失败：库存不足或未找到奖品 `{item_name}`。")]
+
+        balance = self._db_get_balance(group_id, user_id) or 0
+        gain = unit_price * count
+        self._db_update_balance(group_id, user_id, balance + gain)
+        return [
+            event.plain_result(
+                f"回收成功：{item_name} x{count}\n"
+                f"回收单价：{unit_price} 元\n"
+                f"获得金额：{gain} 元\n"
+                f"当前余额：{balance + gain} 元"
+            )
+        ]
 
     def _build_session_key(self, event: AstrMessageEvent) -> str:
         identity = self._get_identity(event)
@@ -631,6 +704,14 @@ class ArknightsBlindBoxPlugin(Star):
         category = self.categories.get(category_id, {})
         if category.get("box_type") == "number":
             return int(self.runtime_config.get("number_box_price", 25))
+        if not category:
+            if category_id.startswith("num"):
+                return int(self.runtime_config.get("number_box_price", 25))
+            if category_id.startswith("sp") or category_id.startswith("special"):
+                special_prices = self.runtime_config.get("special_box_prices", {})
+                if isinstance(special_prices, dict) and category_id in special_prices:
+                    return int(special_prices[category_id])
+                return int(self.runtime_config.get("special_box_default_price", 0))
         special_prices = self.runtime_config.get("special_box_prices", {})
         if isinstance(special_prices, dict) and category_id in special_prices:
             return int(special_prices[category_id])
@@ -856,6 +937,12 @@ class ArknightsBlindBoxPlugin(Star):
 
     def _db_get_user_inventory(self, group_id: str, user_id: str):
         return get_user_inventory(self.db_path, group_id, user_id)
+
+    def _db_get_user_inventory_by_category(self, group_id: str, user_id: str, category_id: str):
+        return get_user_inventory_by_category(self.db_path, group_id, user_id, category_id)
+
+    def _db_consume_inventory_item(self, group_id: str, user_id: str, category_id: str, item_name: str, count: int = 1) -> bool:
+        return consume_inventory_item(self.db_path, group_id, user_id, category_id, item_name, count)
 
     def _db_ensure_category_state(self, category_id: str, category: dict):
         db_ensure_category_state(self.db_path, category_id, category)
