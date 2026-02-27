@@ -55,6 +55,7 @@ resources/number_box/
 - `/方舟盲盒 钱包`
 - `/方舟盲盒 库存`
 - `/方舟盲盒 列表`
+- `/方舟盲盒 市场 [种类ID]`
 - `/方舟盲盒 选择 <种类ID>`
 - `/方舟盲盒 开 <序号>`
 - `/方舟盲盒 状态 [种类ID]`
@@ -77,6 +78,8 @@ resources/number_box/
 - `admin_balance_set_enabled`：是否允许管理员使用余额设置指令（默认 true）
 - `open_cooldown_seconds`：开盲盒冷却秒数（默认 10，可在 WebUI 修改）
 - `blacklist_user_ids`：黑名单用户 ID 列表（命中后无法使用任何 `/方舟盲盒` 指令，支持列表或逗号分隔字符串）
+- `market_volatility`：市场波动率（建议 0.1-0.5）
+- `market_scarcity_weight`：稀缺溢价系数（数量越少价格越高的强度）
 
 > 插件已改为使用仓库根目录 `_conf_schema.json` 注册 WebUI 配置项（符合 AstrBot 插件配置文档）。
 
@@ -87,6 +90,7 @@ resources/number_box/
 - `db_service.py`：SQLite 读写与状态持久化
 - `resource_service.py`：资源扫描、奖品解析、签名构建
 - `time_service.py`：时间工具（UTC+8 日期/小时）
+- `market_service.py`：市场价格模型（波动率 + 稀缺溢价）
 
 
 - 冷却机制：同一用户在同一群组开完一发后需等待冷却时间后才能继续开启（默认 10 秒，可在 WebUI 配置）。
@@ -96,4 +100,6 @@ resources/number_box/
 - 黑名单机制：`blacklist_user_ids` 中的用户将被静默拦截（不回复任何内容）。
 - 管理员可用 `/方舟盲盒 管理员 黑名单 列表|添加 <user_id>|移除 <user_id>` 手动维护黑名单。
 
-- 库存价格展示：`/方舟盲盒 库存` 会显示每个条目的通行证单价、数量和数量总价。
+- 市场系统：`/方舟盲盒 市场` 可查看市场总览，`/方舟盲盒 市场 <种类ID>` 可查看该种类的当日定价细节。
+- 定价模型：`最终价 = 基准价 × 市场波动系数 × 稀缺系数`，并且剩余数量越少价格越高。
+- 库存价格展示：`/方舟盲盒 库存` 会显示每个条目的市场单价、数量和数量总价。

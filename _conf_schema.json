@@ -59,5 +59,17 @@
     "description": "每日赠送发放时间（UTC+8 小时）",
     "hint": "0-23，默认 6，表示每天 UTC+8 的该整点后发放一次",
     "default": 6
+  },
+  "market_volatility": {
+    "type": "float",
+    "description": "市场波动率",
+    "hint": "用于市场价格模型，范围建议 0.1-0.5，数值越大每日波动越明显",
+    "default": 0.2
+  },
+  "market_scarcity_weight": {
+    "type": "float",
+    "description": "稀缺溢价系数",
+    "hint": "数量越少价格越高的强度，>=0，默认 0.8",
+    "default": 0.8
   }
 }
