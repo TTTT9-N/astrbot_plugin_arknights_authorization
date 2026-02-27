@@ -60,7 +60,7 @@ resources/number_box/
 - `/方舟盲盒 状态 [种类ID]`
 - `/方舟盲盒 刷新 [种类ID]`
 - `/方舟盲盒 重载资源`
-- `/方舟盲盒 管理员 列表|添加|移除|特殊定价|余额`
+- `/方舟盲盒 管理员 列表|添加|移除|特殊定价|余额|黑名单`
 
 
 ## WebUI 配置项
@@ -72,7 +72,8 @@ resources/number_box/
 - `special_box_default_price`：特殊盒默认单抽价格（默认 40）
 - `admin_ids`：管理员账号 ID 列表
 - `special_box_prices`：特殊盒单独定价对象（如 `{"sp_xxx": 66}`）
-- `daily_gift_amount`：每日赠送金额（UTC+8 06:00 自动发放，默认 100）
+- `daily_gift_amount`：每日赠送金额（在 `daily_gift_hour_utc8` 指定时刻自动发放，默认 100）
+- `daily_gift_hour_utc8`：每日赠送发放小时（UTC+8，0-23，默认 6）
 - `admin_balance_set_enabled`：是否允许管理员使用余额设置指令（默认 true）
 - `open_cooldown_seconds`：开盲盒冷却秒数（默认 10，可在 WebUI 修改）
 - `blacklist_user_ids`：黑名单用户 ID 列表（命中后无法使用任何 `/方舟盲盒` 指令，支持列表或逗号分隔字符串）
@@ -93,3 +94,4 @@ resources/number_box/
 
 - 库存系统：用户抽到的奖品会自动进入库存并持久化保存（按群隔离），使用 `/方舟盲盒 库存` 查看。
 - 黑名单机制：`blacklist_user_ids` 中的用户将被拒绝使用所有插件指令。
+- 管理员可用 `/方舟盲盒 管理员 黑名单 列表|添加 <user_id>|移除 <user_id>` 手动维护黑名单。
