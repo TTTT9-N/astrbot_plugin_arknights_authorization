@@ -56,7 +56,7 @@ except ImportError:
     from inventory_service import add_inventory_item, get_user_inventory, init_inventory_table
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.8")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.5.9")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -156,7 +156,11 @@ class ArknightsBlindBoxPlugin(Star):
                 return
             lines = ["当前库存："]
             for category_id, item_name, count in rows:
-                lines.append(f"- [{category_id}] {item_name} x{count}")
+                unit_price, unit_text = self._get_inventory_unit_price(category_id)
+                total_text = f"{unit_price * count} 元" if unit_price is not None else "待定"
+                lines.append(
+                    f"- [{category_id}] {item_name} x{count} | 通行证单价：{unit_text} | 数量总价：{total_text}"
+                )
             lines.append(f"\n当前群：{group_id}")
             yield event.plain_result("\n".join(lines))
             return
@@ -208,7 +212,7 @@ class ArknightsBlindBoxPlugin(Star):
                 yield event.plain_result(
                     f"你已选择【{category['id']}】\n"
                     f"当前卡池剩余：{len(remain_items)}\n"
-                    f"当前单抽价格：{price} 元\n"
+                    f"当前单抽价格：{self._format_price_text(price)}\n"
                     "该种类已不可继续开启。你可以：\n"
                     f"1) /方舟盲盒 刷新 {category_id}\n"
                     "2) /方舟盲盒 列表（换种类）"
@@ -218,7 +222,7 @@ class ArknightsBlindBoxPlugin(Star):
             tip = (
                 f"你已选择【{category['id']}】\n"
                 f"当前卡池剩余：{len(remain_items)}\n"
-                f"当前单抽价格：{price} 元\n"
+                f"当前单抽价格：{self._format_price_text(price)}\n"
                 f"可选序号：{self._format_slots(remain_slots)}\n"
                 "请发送指令：/方舟盲盒 开 <序号>"
             )
@@ -255,6 +259,9 @@ class ArknightsBlindBoxPlugin(Star):
                 yield event.plain_result("你还未注册，请先发送：/方舟盲盒 注册")
                 return
             price = self._get_category_price(category_id)
+            if price <= 0:
+                yield event.plain_result("当前种类的通行证价格待定，请联系管理员设置特殊定价后再开启。")
+                return
             if balance < price:
                 yield event.plain_result(f"余额不足，当前余额：{balance} 元，当前单抽价格：{price} 元")
                 return
@@ -468,7 +475,7 @@ class ArknightsBlindBoxPlugin(Star):
         for category_id, category in self.categories.items():
             remain_items, remain_slots = self._db_get_category_state(category_id)
             lines.append(
-                f"- {category_id}（类型: {category['box_type']}，价格: {self._get_category_price(category_id)} 元，"
+                f"- {category_id}（类型: {category['box_type']}，价格: {self._format_price_text(self._get_category_price(category_id))}，"
                 f"卡池: {len(remain_items)}/{len(category['items'])}，序号: {len(remain_slots)}/{category['slot_total']}）"
             )
         lines.append("\n使用：/方舟盲盒 选择 <种类ID>")
@@ -592,14 +599,34 @@ class ArknightsBlindBoxPlugin(Star):
         identity = self._get_identity(event)
         return bool(identity and identity[1] in self._get_blacklist_user_ids())
 
+
+    def _format_price_text(self, price: int) -> str:
+        return f"{price} 元" if price > 0 else "待定"
+
+    def _get_inventory_unit_price(self, category_id: str) -> Tuple[Optional[int], str]:
+        category = self.categories.get(category_id)
+        if category and category.get("box_type") == "number":
+            price = int(self.runtime_config.get("number_box_price", 25))
+            return price, self._format_price_text(price)
+
+        special_prices = self.runtime_config.get("special_box_prices", {})
+        if isinstance(special_prices, dict) and category_id in special_prices:
+            price = int(special_prices[category_id])
+            return price, self._format_price_text(price)
+
+        default_special = int(self.runtime_config.get("special_box_default_price", 0))
+        if default_special > 0:
+            return default_special, self._format_price_text(default_special)
+        return None, "待定"
+
     def _get_category_price(self, category_id: str) -> int:
         category = self.categories.get(category_id, {})
         if category.get("box_type") == "number":
             return int(self.runtime_config.get("number_box_price", 25))
         special_prices = self.runtime_config.get("special_box_prices", {})
-        if category_id in special_prices:
+        if isinstance(special_prices, dict) and category_id in special_prices:
             return int(special_prices[category_id])
-        return int(self.runtime_config.get("special_box_default_price", 40))
+        return int(self.runtime_config.get("special_box_default_price", 0))
 
     def _build_results_with_optional_image(self, event: AstrMessageEvent, text: str, image: Optional[Path]):
         image_str = str(image) if image else ""
@@ -682,7 +709,7 @@ class ArknightsBlindBoxPlugin(Star):
         self._save_json(self.runtime_config_path, {
             "initial_balance": 200,
             "number_box_price": 25,
-            "special_box_default_price": 40,
+            "special_box_default_price": 0,
             "admin_ids": [],
             "special_box_prices": {},
             "daily_gift_amount": 100,

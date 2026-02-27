@@ -7,15 +7,15 @@
   },
   "number_box_price": {
     "type": "int",
-    "description": "数字盒单抽价格",
-    "hint": "number_box 下所有种类的默认单抽花费",
+    "description": "数字盒基准单抽价格",
+    "hint": "数字盒默认基准价格，默认 25 元",
     "default": 25
   },
   "special_box_default_price": {
     "type": "int",
-    "description": "特殊盒默认单抽价格",
-    "hint": "special_box 下未单独定价种类的默认价格",
-    "default": 40
+    "description": "特殊盒默认单抽价格（待定可设为0）",
+    "hint": "special_box 下未单独定价种类的默认价格；设置为 0 表示待定不可抽",
+    "default": 0
   },
   "admin_ids": {
     "type": "list",

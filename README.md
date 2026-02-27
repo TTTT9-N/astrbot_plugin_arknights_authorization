@@ -68,8 +68,8 @@ resources/number_box/
 插件配置页可直接设置以下参数：
 
 - `initial_balance`：新用户初始金额（默认 200）
-- `number_box_price`：数字盒单抽价格（默认 25）
-- `special_box_default_price`：特殊盒默认单抽价格（默认 40）
+- `number_box_price`：数字盒基准单抽价格（默认 25）
+- `special_box_default_price`：特殊盒默认单抽价格（默认 0，表示待定不可抽）
 - `admin_ids`：管理员账号 ID 列表
 - `special_box_prices`：特殊盒单独定价对象（如 `{"sp_xxx": 66}`）
 - `daily_gift_amount`：每日赠送金额（在 `daily_gift_hour_utc8` 指定时刻自动发放，默认 100）
@@ -95,3 +95,5 @@ resources/number_box/
 - 库存系统：用户抽到的奖品会自动进入库存并持久化保存（按群隔离），使用 `/方舟盲盒 库存` 查看。
 - 黑名单机制：`blacklist_user_ids` 中的用户将被静默拦截（不回复任何内容）。
 - 管理员可用 `/方舟盲盒 管理员 黑名单 列表|添加 <user_id>|移除 <user_id>` 手动维护黑名单。
+
+- 库存价格展示：`/方舟盲盒 库存` 会显示每个条目的通行证单价、数量和数量总价。
