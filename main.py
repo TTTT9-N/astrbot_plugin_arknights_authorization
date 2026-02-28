@@ -90,7 +90,7 @@ except Exception:
     from resource_index_service import sync_box_index_file
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.7.1")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.7.2")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -134,15 +134,13 @@ class ArknightsBlindBoxPlugin(Star):
         logger.info("[arknights_blindbox] 插件初始化完成。")
 
     @filter.command("方舟盲盒")
-    async def arknights_blindbox(self, event: AstrMessageEvent, *handler_args):
+    async def arknights_blindbox(self, event: AstrMessageEvent):
         self._maybe_reload_runtime_data()
         self._sync_runtime_config_from_context()
         self._grant_daily_gift_if_due()
         self._refresh_categories_and_states()
 
         args = self._extract_command_args(event.message_str)
-        if not args and handler_args:
-            args = [str(arg).strip() for arg in handler_args if str(arg).strip()]
         if not args:
             yield event.plain_result(self._build_help_text())
             return
@@ -500,9 +498,20 @@ class ArknightsBlindBoxPlugin(Star):
         text = (raw_message or "").strip()
         if not text:
             return []
-        if text.startswith("/方舟盲盒市场"):
-            remain = text.replace("/方舟盲盒市场", "", 1).strip()
-            return ["市场"] + ([p for p in remain.split() if p] if remain else [])
+        compact_prefix_map = {
+            "/方舟盲盒市场": "市场",
+            "/方舟盲盒重载资源": "重载资源",
+            "/方舟盲盒帮助": "帮助",
+            "/方舟盲盒列表": "列表",
+            "/方舟盲盒注册": "注册",
+            "/方舟盲盒钱包": "钱包",
+            "/方舟盲盒库存": "库存",
+            "/方舟盲盒状态": "状态",
+        }
+        for prefix, action in compact_prefix_map.items():
+            if text.startswith(prefix):
+                remain = text.replace(prefix, "", 1).strip()
+                return [action] + ([p for p in remain.split() if p] if remain else [])
         parts = [p for p in text.split() if p]
         first = parts[0].lstrip("/") if parts else ""
         return parts[1:] if first == "方舟盲盒" else parts
