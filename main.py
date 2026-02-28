@@ -90,7 +90,7 @@ except Exception:
     from resource_index_service import sync_box_index_file
 
 
-@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.7.0")
+@register("astrbot_plugin_arknights_authorization", "codex", "明日方舟通行证盲盒互动插件", "1.7.1")
 class ArknightsBlindBoxPlugin(Star):
     """明日方舟通行证盲盒互动插件。"""
 
@@ -134,13 +134,15 @@ class ArknightsBlindBoxPlugin(Star):
         logger.info("[arknights_blindbox] 插件初始化完成。")
 
     @filter.command("方舟盲盒")
-    async def arknights_blindbox(self, event: AstrMessageEvent):
+    async def arknights_blindbox(self, event: AstrMessageEvent, *handler_args):
         self._maybe_reload_runtime_data()
         self._sync_runtime_config_from_context()
         self._grant_daily_gift_if_due()
         self._refresh_categories_and_states()
 
         args = self._extract_command_args(event.message_str)
+        if not args and handler_args:
+            args = [str(arg).strip() for arg in handler_args if str(arg).strip()]
         if not args:
             yield event.plain_result(self._build_help_text())
             return
